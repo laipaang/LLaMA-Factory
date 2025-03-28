@@ -96,17 +96,18 @@ def main():
             if int(nnodes) > 1:
                 print(f"Multi-node training enabled: num nodes: {nnodes}, node rank: {node_rank}")
 
-            process = subprocess.run(
-                (
-                    # Unset OpenMPI-related environment variables to avoid conflicts with PyTorch's distributed settings.
-                    # OpenMPI (used with mpirun) sets these variables, but PyTorch's `torchrun` uses its own LOCAL_RANK.
-                    # Keeping them may cause issues with GPU device allocation in PyTorch.
-                    "unset OMPI_COMM_WORLD_RANK OMPI_COMM_WORLD_SIZE OMPI_COMM_WORLD_LOCAL_RANK;"
+            # Unset OpenMPI-related environment variables to avoid conflicts with PyTorch's distributed settings.
+            # OpenMPI (used with mpirun) sets these variables, but PyTorch's `torchrun` uses its own LOCAL_RANK.
+            # Keeping them may cause issues with GPU device allocation in PyTorch.
+            env = os.environ.copy()
+            env.pop('OMPI_COMM_WORLD_RANK', None)
+            env.pop('OMPI_COMM_WORLD_SIZE', None)
+            env.pop('OMPI_COMM_WORLD_LOCAL_RANK', None)
 
+            cmd = (
                     "torchrun --nnodes {nnodes} --node_rank {node_rank} --nproc_per_node {nproc_per_node} "
                     "--master_addr {master_addr} --master_port {master_port} {file_name} {args}"
-                )
-                .format(
+                ).format(
                     nnodes=nnodes,
                     node_rank=node_rank,
                     nproc_per_node=nproc_per_node,
@@ -114,8 +115,11 @@ def main():
                     master_port=master_port,
                     file_name=launcher.__file__,
                     args=" ".join(sys.argv[1:]),
-                )
-                .split()
+                ).split()
+            logger.info_rank0(f"run cmd {cmd}")
+            process = subprocess.run(
+                cmd,
+                env=env
             )
             sys.exit(process.returncode)
         else:
@@ -134,3 +138,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
