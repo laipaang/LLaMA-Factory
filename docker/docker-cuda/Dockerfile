@@ -101,3 +101,5 @@ EXPOSE 7860
 ENV API_PORT 8000
 EXPOSE 8000
 
+RUN mv /usr/local/openmpi-4.1.5/bin/mpirun.old /usr/local/openmpi-4.1.5/bin/mpirun
+
