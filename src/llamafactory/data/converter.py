@@ -101,7 +101,7 @@ class AlpacaDatasetConverter(DatasetConverter):
         output = {
             "_prompt": prompt,
             "_response": response,
-            "_system": example[self.dataset_attr.system] if self.dataset_attr.system else "",
+            "_system": example[self.dataset_attr.system] if self.dataset_attr.system else None,
             "_tools": example[self.dataset_attr.tools] if self.dataset_attr.tools else "",
             "_images": self._find_medias(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
@@ -132,7 +132,7 @@ class SharegptDatasetConverter(DatasetConverter):
             system = messages[0][self.dataset_attr.content_tag]
             messages = messages[1:]
         else:
-            system = example[self.dataset_attr.system] if self.dataset_attr.system else ""
+            system = example[self.dataset_attr.system] if self.dataset_attr.system else None
 
         aligned_messages = []
         broken_data = False
@@ -148,6 +148,8 @@ class SharegptDatasetConverter(DatasetConverter):
                     "content": message[self.dataset_attr.content_tag],
                 }
             )
+            if self.dataset_attr.weight_tag and self.dataset_attr.weight_tag in message:
+                aligned_messages[-1]["weight"] = message[self.dataset_attr.weight_tag]
 
         if (not self.dataset_attr.ranking and len(aligned_messages) % 2 != 0) or (
             self.dataset_attr.ranking and len(aligned_messages) % 2 == 0

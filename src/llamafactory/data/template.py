@@ -123,7 +123,7 @@ class Template:
         Turn 0: prefix + system + query        resp
         Turn t: query                          resp.
         """
-        system = system or self.default_system
+        system = system if system is not None else self.default_system
         encoded_messages = []
         for i, message in enumerate(messages):
             elements = []

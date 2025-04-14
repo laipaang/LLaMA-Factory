@@ -62,6 +62,7 @@ class DatasetAttr:
     observation_tag: Optional[str] = "observation"
     function_tag: Optional[str] = "function_call"
     system_tag: Optional[str] = "system"
+    weight_tag: Optional[str] = "weight"
 
     def __repr__(self) -> str:
         return self.dataset_name
@@ -86,6 +87,7 @@ class DatasetAttr:
         if "tags" in attr:
             tag_names = ["role_tag", "content_tag"]
             tag_names += ["user_tag", "assistant_tag", "observation_tag", "function_tag", "system_tag"]
+            tag_names += ["weight_tag"]
             for tag in tag_names:
                 self.set_attr(tag, attr["tags"])
 

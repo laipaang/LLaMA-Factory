@@ -49,6 +49,7 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         if self.data_args.mask_history:
             encoded_pairs = encoded_pairs[::-1]  # high priority for last turns
 
+        assert len(messages) == len(encoded_pairs) * 2
         for turn_idx, (source_ids, target_ids) in enumerate(encoded_pairs):
             if total_length >= self.data_args.cutoff_len:
                 break
@@ -70,7 +71,10 @@ class SupervisedDatasetProcessor(DatasetProcessor):
             if self.data_args.mask_history and turn_idx != 0:  # train on the last turn only
                 target_label = [IGNORE_INDEX] * target_len
             else:
-                target_label = target_ids
+                if messages[turn_idx * 2 + 1].get("weight", 1.0) > 0.0:
+                    target_label = target_ids
+                else:
+                    target_label = [IGNORE_INDEX] * target_len
 
             if self.data_args.mask_history:  # reversed sequences
                 input_ids = source_ids + target_ids + input_ids
