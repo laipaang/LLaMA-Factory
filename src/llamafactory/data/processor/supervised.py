@@ -202,3 +202,39 @@ class PackedSupervisedDatasetProcessor(SupervisedDatasetProcessor):
             model_inputs["audios"].append(packed_audios or None)
 
         return model_inputs
+
+
+@dataclass
+class TargetingDatasetProcessor(DatasetProcessor):
+    def preprocess_dataset(self, examples: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        # build inputs with format `<bos> X Y <eos>` and labels with format `<ignore> ... <ignore> Y <eos>`
+        # for multiturn examples, we only mask the prompt part in each prompt-response pair.
+        model_inputs = defaultdict(list)
+        for i in range(len(examples["_src"])):
+            input_ids = self.tokenizer.encode(examples["_src"], skip_special_tokens=False)
+            label_ids = self.tokenizer.encode(examples["_tgt"], skip_special_tokens=False)
+            model_inputs["input_ids"].append(input_ids)
+            model_inputs["attention_mask"].append([1] * len(input_ids))
+            model_inputs["labels"].append(label_ids)
+            model_inputs["is_use_sft_loss"].append(examples["_is_use_sft_loss"][i])
+            model_inputs["cls_soft_label"].append(examples["_cls_soft_label"][i])
+            model_inputs["is_use_cls_loss"].append(examples["_is_use_cls_loss"][i])
+            model_inputs["tw_softlabel"].append(examples["_tw_softlabel"][i])
+            model_inputs["is_use_tw_loss"].append(examples["_is_use_tw_loss"][i])
+
+        return model_inputs
+
+    def print_data_example(self, example: dict[str, list[int]]) -> None:
+        valid_labels = list(filter(lambda x: x != IGNORE_INDEX, example["labels"]))
+        print("input_ids:{}\n".format(example["input_ids"]))
+        print("inputs:{}\n".format(self.tokenizer.decode(example["input_ids"], skip_special_tokens=False)))
+        print("label_ids:{}\n".format(example["labels"]))
+        print(f"labels:{self.tokenizer.decode(valid_labels, skip_special_tokens=False)}\n")
+        print("is_use_sft_loss:{}\n".format(example["is_use_sft_loss"]))
+        print("cls_soft_label:{}\n".format(example["cls_soft_label"]))
+        print("is_use_cls_loss:{}\n".format(example["is_use_cls_loss"]))
+        print("tw_softlabel:{}\n".format(example["tw_softlabel"]))
+        print("is_use_tw_loss:{}\n".format(example["is_use_tw_loss"]))
+
+
+
