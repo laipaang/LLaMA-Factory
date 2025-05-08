@@ -35,6 +35,7 @@ from .model_utils.misc import register_autoclass
 from .model_utils.mod import convert_pretrained_model_to_mod, load_mod_pretrained_model
 from .model_utils.unsloth import load_unsloth_pretrained_model
 from .model_utils.valuehead import load_valuehead_params
+from .model_utils.task_plugin_model import QwenWithTaskPlugin
 from .patcher import patch_config, patch_model, patch_processor, patch_tokenizer, patch_valuehead_model
 
 
@@ -148,7 +149,10 @@ def load_model(
             elif type(config) in AutoModelForSeq2SeqLM._model_mapping.keys():  # audio-text
                 load_class = AutoModelForSeq2SeqLM
             else:
-                load_class = AutoModelForCausalLM
+                if model_args.model_use_task_as_plugin == True:
+                    load_class = QwenWithTaskPlugin
+                else:
+                    load_class = AutoModelForCausalLM
 
             if model_args.train_from_scratch:
                 model = load_class.from_config(config, trust_remote_code=model_args.trust_remote_code)

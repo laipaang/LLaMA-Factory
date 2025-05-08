@@ -211,15 +211,27 @@ class TargetingDatasetProcessor(DatasetProcessor):
         # for multiturn examples, we only mask the prompt part in each prompt-response pair.
         model_inputs = defaultdict(list)
         for i in range(len(examples["_src"])):
-            input_ids = self.tokenizer.encode(examples["_src"], skip_special_tokens=False)
-            label_ids = self.tokenizer.encode(examples["_tgt"], skip_special_tokens=False)
+            source_ids = self.tokenizer.encode(examples["_src"][i][0], add_special_tokens=False)
+            target_ids = self.tokenizer.encode(examples["_tgt"][i][0], add_special_tokens=False)
+            #padding
+            source_len, target_len = infer_seqlen(len(source_ids), len(target_ids), self.data_args.cutoff_len)
+            source_ids = source_ids[:source_len]
+            target_ids = target_ids[:target_len]
+            source_label = [IGNORE_INDEX] * source_len
+            target_label = target_ids
+            input_ids = source_ids + target_ids
+            label_ids = source_label + target_label
+            if self.template.efficient_eos:
+                input_ids += [self.tokenizer.eos_token_id]
+                label_ids += [self.tokenizer.eos_tok]
+
             model_inputs["input_ids"].append(input_ids)
             model_inputs["attention_mask"].append([1] * len(input_ids))
             model_inputs["labels"].append(label_ids)
             model_inputs["is_use_sft_loss"].append(examples["_is_use_sft_loss"][i])
-            model_inputs["cls_soft_label"].append(examples["_cls_soft_label"][i])
+            model_inputs["cls_soft_label"].append(examples["_cls_soft_label"][i][0])
             model_inputs["is_use_cls_loss"].append(examples["_is_use_cls_loss"][i])
-            model_inputs["tw_softlabel"].append(examples["_tw_softlabel"][i])
+            model_inputs["tw_soft_label"].append(examples["_tw_soft_label"][i][0])
             model_inputs["is_use_tw_loss"].append(examples["_is_use_tw_loss"][i])
 
         return model_inputs
@@ -233,7 +245,7 @@ class TargetingDatasetProcessor(DatasetProcessor):
         print("is_use_sft_loss:{}\n".format(example["is_use_sft_loss"]))
         print("cls_soft_label:{}\n".format(example["cls_soft_label"]))
         print("is_use_cls_loss:{}\n".format(example["is_use_cls_loss"]))
-        print("tw_softlabel:{}\n".format(example["tw_softlabel"]))
+        print("tw_soft_label:{}\n".format(example["tw_soft_label"]))
         print("is_use_tw_loss:{}\n".format(example["is_use_tw_loss"]))
 
 

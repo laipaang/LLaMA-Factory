@@ -29,7 +29,7 @@ from ...extras import logging
 from ...extras.constants import IGNORE_INDEX
 from ...extras.packages import is_transformers_version_greater_than
 from ..callbacks import SaveProcessorCallback
-from ..trainer_utils import create_custom_optimizer, create_custom_scheduler, create_targeting_loss
+from ..trainer_utils import create_custom_optimizer, create_custom_scheduler, compute_targeting_loss
 
 
 if TYPE_CHECKING:
@@ -99,7 +99,7 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
     @override
     def compute_loss(self, model, inputs, *args, **kwargs):
         if self.args.use_task_as_plugin == True:
-            create_targeting_loss(self, model, inputs, self.args)
+            compute_targeting_loss(model, inputs)
         return super().compute_loss(model, inputs, *args, **kwargs)
 
     @override

@@ -510,11 +510,11 @@ def create_custom_optimizer(
         return _create_adam_mini_optimizer(model, training_args)
 
 
-def compute_targeting_loss(model, inputs, self.args, return_outputs=False):
+def compute_targeting_loss(model, inputs, return_outputs=False):
     is_use_sft_loss = inputs.pop('is_use_sft_loss', None)
     cls_soft_label = inputs.pop('cls_soft_label', None)
     is_use_cls_loss = inputs.pop('is_use_cls_loss', None)
-    tw_softlabel = inputs.pop('tw_softlabel', None)
+    tw_soft_label = inputs.pop('tw_soft_label', None)
     is_use_tw_loss = inputs.pop('is_use_tw_loss', None)
     
     outputs = model(
@@ -522,7 +522,7 @@ def compute_targeting_loss(model, inputs, self.args, return_outputs=False):
         is_use_sft_loss=is_use_sft_loss,
         cls_soft_label=cls_soft_label,
         is_use_cls_loss=is_use_cls_loss,
-        tw_softlabel=tw_softlabel,
+        tw_soft_label=tw_soft_label,
         is_use_tw_loss=is_use_tw_loss
     )
     loss = outputs['loss']

@@ -107,6 +107,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Enable sequence packing without cross-attention."},
     )
+    targeting: bool = field(
+        default=False,
+        metadata={"help": "Whether or not has judge score loss in targeting."},
+    )
     tool_format: Optional[str] = field(
         default=None,
         metadata={"help": "Tool format to use for constructing function calling examples."},

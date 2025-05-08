@@ -132,7 +132,7 @@ class TargetingDatasetConverter(DatasetConverter):
             is_dishang = float(score_list[1])
             score_list.append(float(score_list[-1]))
             cls_softlabel.append(qlq_list)
-            tw_softlabel.append(1.0 - is_dishang, is_dishang)
+            tw_softlabel.append([1.0 - is_dishang, is_dishang])
             if tag == 0:
                 is_use_cls_loss.append(0.0)
                 is_use_tw_loss.append(0.0)
@@ -152,7 +152,7 @@ class TargetingDatasetConverter(DatasetConverter):
             "_is_use_sft_loss": is_use_sft_loss,
             "_cls_soft_label": cls_softlabel,
             "_is_use_cls_loss": is_use_cls_loss,
-            "_tw_softlable": tw_softlabel,
+            "_tw_soft_label": tw_softlabel,
             "_is_use_tw_loss": is_use_tw_loss,
         }
         return output
