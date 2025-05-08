@@ -165,6 +165,10 @@ class BaseModelArguments:
         default=False,
         metadata={"help": "Whether to trust the execution of code from datasets/models defined on the Hub or not."},
     )
+    model_use_task_as_plugin: bool = field(
+        default=False,
+        metadata={"help": "Whether to generate nlu head in targeting."},
+    )
 
     def __post_init__(self):
         if self.model_name_or_path is None:

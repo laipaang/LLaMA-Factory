@@ -56,6 +56,10 @@ class RayArguments:
 @dataclass
 class TrainingArguments(RayArguments, Seq2SeqTrainingArguments):
     r"""Arguments pertaining to the trainer."""
+    use_task_as_plugin: bool = field(
+        default=False,
+        metadata={"help": "whether or not to train with nlu head in target."},
+    )
 
     def __post_init__(self):
         Seq2SeqTrainingArguments.__post_init__(self)

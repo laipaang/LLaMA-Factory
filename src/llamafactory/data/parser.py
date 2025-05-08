@@ -30,7 +30,7 @@ class DatasetAttr:
     # basic configs
     load_from: Literal["hf_hub", "ms_hub", "om_hub", "script", "file"]
     dataset_name: str
-    formatting: Literal["alpaca", "sharegpt"] = "alpaca"
+    formatting: Literal["alpaca", "sharegpt", "targeting"] = "alpaca"
     ranking: bool = False
     # extra configs
     subset: Optional[str] = None
@@ -43,6 +43,9 @@ class DatasetAttr:
     images: Optional[str] = None
     videos: Optional[str] = None
     audios: Optional[str] = None
+    #target
+    src: Optional[str] = None
+    tgt: Optional[str] = None
     # dpo columns
     chosen: Optional[str] = None
     rejected: Optional[str] = None
@@ -80,7 +83,7 @@ class DatasetAttr:
 
         if "columns" in attr:
             column_names = ["prompt", "query", "response", "history", "messages", "system", "tools"]
-            column_names += ["images", "videos", "audios", "chosen", "rejected", "kto_tag"]
+            column_names += ["images", "videos", "audios", "chosen", "rejected", "kto_tag", "src", "tgt"]
             for column_name in column_names:
                 self.set_attr(column_name, attr["columns"])
 
