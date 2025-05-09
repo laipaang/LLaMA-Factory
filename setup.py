@@ -45,16 +45,15 @@ extra_require = {
     "torch": ["torch>=1.13.1"],
     "torch-npu": ["torch==2.4.0", "torch-npu==2.4.0.post2", "decorator"],
     "metrics": ["nltk", "jieba", "rouge-chinese"],
-    "deepspeed": ["deepspeed>=0.10.0,<=0.16.4"],
+    "deepspeed": ["deepspeed>=0.10.0,<=0.16.5"],
     "liger-kernel": ["liger-kernel>=0.5.5"],
     "bitsandbytes": ["bitsandbytes>=0.39.0"],
     "hqq": ["hqq"],
     "eetq": ["eetq"],
     "gptq": ["optimum>=1.17.0", "auto-gptq>=0.5.0"],
-    "awq": ["autoawq"],
     "aqlm": ["aqlm[gpu]>=1.1.0"],
-    "vllm": ["vllm>=0.4.3,<=0.8.1"],
-    "sglang": ["sglang[srt]>=0.4.4", "transformers==4.48.3"],
+    "vllm": ["vllm>=0.4.3,<=0.8.5"],
+    "sglang": ["sglang[srt]>=0.4.5", "transformers==4.51.1"],
     "galore": ["galore-torch"],
     "apollo": ["apollo-torch"],
     "badam": ["badam>=1.2.1"],
@@ -74,7 +73,7 @@ extra_require = {
     "modelscope": ["modelscope"],
     "openmind": ["openmind"],
     "swanlab": ["swanlab"],
-    "dev": ["pre-commit", "ruff", "pytest"],
+    "dev": ["pre-commit", "ruff", "pytest", "build"],
 }
 
 
