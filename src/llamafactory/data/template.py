@@ -138,7 +138,7 @@ class Template:
         Turn 0: prefix + system + query        resp
         Turn t: query                          resp.
         """
-        system = system or self.default_system
+        system = system if system is not None else self.default_system
         encoded_messages = []
         for i, message in enumerate(messages):
             elements = []
@@ -1558,6 +1558,13 @@ register_template(
     template_class=ReasoningTemplate,
 )
 
+# copied from chatml template
+register_template(
+    name="target",
+    format_user=StringFormatter(slots=["<|im_start|>src\n{{content}}<|im_end|>\n<|im_start|>tgt\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    stop_words=["<|im_end|>"],
+)
 
 # copied from chatml template
 register_template(

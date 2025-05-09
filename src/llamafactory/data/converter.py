@@ -107,7 +107,7 @@ class AlpacaDatasetConverter(DatasetConverter):
         output = {
             "_prompt": prompt,
             "_response": response,
-            "_system": example[self.dataset_attr.system] if self.dataset_attr.system else "",
+            "_system": example[self.dataset_attr.system] if self.dataset_attr.system else None,
             "_tools": example[self.dataset_attr.tools] if self.dataset_attr.tools else "",
             "_images": self._find_medias(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
@@ -115,6 +115,53 @@ class AlpacaDatasetConverter(DatasetConverter):
         }
         return output
 
+
+@dataclass
+class TargetingDatasetConverter(DatasetConverter):
+    def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
+        src = []
+        if self.dataset_attr.src and example[self.dataset_attr.src]:
+            src.append(example[self.dataset_attr.src])
+        
+        tgt = []
+        is_use_sft_loss, is_use_cls_loss, is_use_tw_loss, cls_softlabel, tw_softlabel = [], [], [], [], []
+        if self.dataset_attr.tgt and example[self.dataset_attr.tgt]:
+            tgt_reward = example[self.dataset_attr.tgt]
+            tgt_reward_str_list = tgt_reward.split("[SEP]")
+            tgt.append(tgt_reward_str_list[0])
+            
+            score_list = tgt_reward_str_list[1].split(" ")
+            is_sft = float(tgt_reward_str_list[2])
+            tag = int(tgt_reward_str_list[3])
+            is_use_sft_loss.append(is_sft)
+            qlq_list = [float(i) for i in score_list[0].split('_')]
+            is_dishang = float(score_list[1])
+            score_list.append(float(score_list[-1]))
+            cls_softlabel.append(qlq_list)
+            tw_softlabel.append([1.0 - is_dishang, is_dishang])
+            if tag == 0:
+                is_use_cls_loss.append(0.0)
+                is_use_tw_loss.append(0.0)
+            elif tag == 1:
+                is_use_cls_loss.append(1.0)
+                is_use_tw_loss.append(0.0)
+            elif tag == 2:
+                is_use_cls_loss.append(0.0)
+                is_use_tw_loss.append(1.0)  
+            elif tag == 3:
+                is_use_cls_loss.append(1.0)
+                is_use_tw_loss.append(1.0)  
+
+        output = {
+            "_src": src,
+            "_tgt": tgt,
+            "_is_use_sft_loss": is_use_sft_loss,
+            "_cls_soft_label": cls_softlabel,
+            "_is_use_cls_loss": is_use_cls_loss,
+            "_tw_soft_label": tw_softlabel,
+            "_is_use_tw_loss": is_use_tw_loss,
+        }
+        return output
 
 @dataclass
 class SharegptDatasetConverter(DatasetConverter):
@@ -138,7 +185,7 @@ class SharegptDatasetConverter(DatasetConverter):
             system = messages[0][self.dataset_attr.content_tag]
             messages = messages[1:]
         else:
-            system = example[self.dataset_attr.system] if self.dataset_attr.system else ""
+            system = example[self.dataset_attr.system] if self.dataset_attr.system else None
 
         aligned_messages = []
         broken_data = False
@@ -154,6 +201,8 @@ class SharegptDatasetConverter(DatasetConverter):
                     "content": message[self.dataset_attr.content_tag],
                 }
             )
+            if self.dataset_attr.weight_tag and self.dataset_attr.weight_tag in message:
+                aligned_messages[-1]["weight"] = message[self.dataset_attr.weight_tag]
 
         if (not self.dataset_attr.ranking and len(aligned_messages) % 2 != 0) or (
             self.dataset_attr.ranking and len(aligned_messages) % 2 == 0
@@ -215,6 +264,7 @@ class SharegptDatasetConverter(DatasetConverter):
 DATASET_CONVERTERS = {
     "alpaca": AlpacaDatasetConverter,
     "sharegpt": SharegptDatasetConverter,
+    "targeting": TargetingDatasetConverter,
 }
 
 

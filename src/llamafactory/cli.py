@@ -91,6 +91,13 @@ def main():
             env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
             env["TORCH_NCCL_AVOID_RECORD_STREAMS"] = "1"
 
+        # Unset OpenMPI-related environment variables to avoid conflicts with PyTorch's distributed settings.
+        # OpenMPI (used with mpirun) sets these variables, but PyTorch's `torchrun` uses its own LOCAL_RANK.
+        # Keeping them may cause issues with GPU device allocation in PyTorch.
+        env.pop('OMPI_COMM_WORLD_RANK', None)
+        env.pop('OMPI_COMM_WORLD_SIZE', None)
+        env.pop('OMPI_COMM_WORLD_LOCAL_RANK', None)
+
         # NOTE: DO NOT USE shell=True to avoid security risk
         process = subprocess.run(
             (

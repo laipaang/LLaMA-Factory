@@ -19,6 +19,12 @@ ARG INSTALL_EETQ=false
 ARG PIP_INDEX=https://pypi.org/simple
 ARG HTTP_PROXY=
 
+# Set python3.10
+RUN test -e /usr/bin/python3.10 && \
+    ln -sf /usr/bin/python3.10 /usr/local/bin/python
+RUN test -e /usr/local/bin/pip3.10 && \
+    ln -sf /usr/local/bin/pip3.10 /usr/local/bin/pip3
+
 # Set the working directory
 WORKDIR /app
 
@@ -31,20 +37,23 @@ RUN if [ -n "$HTTP_PROXY" ]; then \
 
 # Install the requirements
 COPY requirements.txt /app
-RUN pip config set global.index-url "$PIP_INDEX" && \
-    pip config set global.extra-index-url "$PIP_INDEX" && \
-    python -m pip install --upgrade pip && \
-    if [ -n "$HTTP_PROXY" ]; then \
-        python -m pip install --proxy=$HTTP_PROXY -r requirements.txt; \
-    else \
-        python -m pip install -r requirements.txt; \
-    fi
+
+# RUN pip config set global.index-url "$PIP_INDEX" && \
+#     pip config set global.extra-index-url "$PIP_INDEX" && \
+#     python -m pip install --upgrade pip && \
+#     if [ -n "$HTTP_PROXY" ]; then \
+#         python -m pip install --proxy=$HTTP_PROXY -r requirements.txt; \
+#     else \
+#         python -m pip install -r requirements.txt; \
+#     fi
+RUN python -m pip install --upgrade pip && \
+    python -m pip install -r requirements.txt;
 
 # Copy the rest of the application into the image
 COPY . /app
 
 # Install the LLaMA Factory
-RUN EXTRA_PACKAGES="metrics"; \
+RUN EXTRA_PACKAGES="torch,metrics"; \
     if [ "$INSTALL_BNB" == "true" ]; then \
         EXTRA_PACKAGES="${EXTRA_PACKAGES},bitsandbytes"; \
     fi; \
@@ -69,19 +78,11 @@ RUN EXTRA_PACKAGES="metrics"; \
         pip install -e ".[$EXTRA_PACKAGES]"; \
     fi
 
-# Rebuild flash attention
-RUN pip uninstall -y transformer-engine flash-attn && \
-    if [ "$INSTALL_FLASHATTN" == "true" ]; then \
-        pip uninstall -y ninja && \
-        if [ -n "$HTTP_PROXY" ]; then \
-            pip install --proxy=$HTTP_PROXY ninja && \
-            pip install --proxy=$HTTP_PROXY --no-cache-dir flash-attn --no-build-isolation; \
-        else \
-            pip install ninja && \
-            pip install --no-cache-dir flash-attn --no-build-isolation; \
-        fi; \
+# Install falsh-attn
+RUN if [ "$INSTALL_FLASHATTN" == "true" ]; then \
+        pip install ninja && \
+        MAX_JOBS=64 pip install --no-cache-dir flash-attn --no-build-isolation; \
     fi
-
 
 # Unset http proxy
 RUN if [ -n "$HTTP_PROXY" ]; then \
@@ -99,3 +100,6 @@ EXPOSE 7860
 # Expose port 8000 for the API service
 ENV API_PORT 8000
 EXPOSE 8000
+
+RUN mv /usr/local/openmpi-4.1.5/bin/mpirun.old /usr/local/openmpi-4.1.5/bin/mpirun
+

@@ -159,7 +159,7 @@ def patch_model(
     add_valuehead: bool,
 ) -> None:
     gen_config = model.generation_config  # check and fix generation config
-    if not gen_config.do_sample and (
+    if gen_config is not None and not gen_config.do_sample and (
         (gen_config.temperature is not None and gen_config.temperature != 1.0)
         or (gen_config.top_p is not None and gen_config.top_p != 1.0)
         or (gen_config.typical_p is not None and gen_config.typical_p != 1.0)
