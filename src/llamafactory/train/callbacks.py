@@ -128,6 +128,20 @@ class SaveProcessorCallback(TrainerCallback):
             self.processor.save_pretrained(args.output_dir)
 
 
+class LastCkptCallback(TrainerCallback):
+    r"""A callback for changing the args.output_dir.
+        To save the last checkpoint to /last_ckpt."""
+
+    def __init__(self, last_ckpt_dir: str = "last_ckpt") -> None:
+        self.last_ckpt_dir = last_ckpt_dir
+
+    @override
+    def on_train_end(self, args: "TrainingArguments", state: "TrainerState", control: "TrainerControl", **kwargs):
+        if args.should_save:
+            output_dir = os.path.join(args.output_dir, self.last_ckpt_dir)
+            args.output_dir = output_dir
+
+
 class PissaConvertCallback(TrainerCallback):
     r"""A callback for converting the PiSSA adapter to a normal one."""
 
