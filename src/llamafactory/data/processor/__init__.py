@@ -16,7 +16,7 @@ from .feedback import FeedbackDatasetProcessor
 from .pairwise import PairwiseDatasetProcessor
 from .pretrain import PretrainDatasetProcessor
 from .processor_utils import DatasetProcessor
-from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProcessor, TargetingDatasetProcessor
+from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProcessor, TargetingDatasetProcessor, RlhfDatasetProcessor
 from .unsupervised import UnsupervisedDatasetProcessor
 
 
@@ -29,4 +29,5 @@ __all__ = [
     "SupervisedDatasetProcessor",
     "TargetingDatasetProcessor",
     "UnsupervisedDatasetProcessor",
+    "RlhfDatasetProcessor",
 ]

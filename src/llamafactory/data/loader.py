@@ -32,6 +32,7 @@ from .processor import (
     SupervisedDatasetProcessor,
     TargetingDatasetProcessor,
     UnsupervisedDatasetProcessor,
+    RlhfDatasetProcessor
 )
 
 
@@ -174,7 +175,6 @@ def _get_merged_dataset(
             raise ValueError("The dataset is not applicable in the current training stage.")
 
         datasets[dataset_name] = _load_single_dataset(dataset_attr, model_args, data_args, training_args)
-
     if merge:
         return merge_dataset(list(datasets.values()), data_args, seed=training_args.seed)
     else:
@@ -211,6 +211,8 @@ def _get_dataset_processor(
         else:
             if data_args.targeting:
                 dataset_processor_class = TargetingDatasetProcessor
+            elif data_args.rlhf:
+                dataset_processor_class = RlhfDatasetProcessor
             else:
                 dataset_processor_class = SupervisedDatasetProcessor
 
@@ -257,16 +259,42 @@ def _get_preprocessed_dataset(
         remove_columns=column_names,
         **kwargs,
     )
+    # 现在 dataset 符合要求, 每条原始样本被放在一个 examples 内部, 接下来需要修改 dataloader 逻辑
+    """
+    {
+        'input_ids': [
+            [seq_1 token_id], [seq_2 token_id]
+        ], 
+        'attention_mask': [
+            [mask_1], [mask_2]
+        ], 
+        'labels': [
+            [label_1 token_id], [label_2 token_id]
+        ], 
+        'is_use_sft_loss': [seq_1 sft tag, seq_2 sft tag], 
+        'is_use_cls_loss': 类似, 
+        'is_use_tw_loss': 类似, 
+        'cls_soft_label': [
+            [qlq_score_1], [qlq_score_2]
+        ], 
+        'tw_soft_label': [
+            [tw_score_1], [tw_score_2]
+        ], 
+        'scores': [click_1, click_2], 
+        'rank': [rank_1, rank_2]
+    }
+    """
 
-    if training_args.should_log:
-        try:
-            print("eval example:" if is_eval else "training example:")
-            dataset_processor.print_data_example(next(iter(dataset)))
-        except StopIteration:
-            if stage == "pt":
-                raise RuntimeError("Cannot find sufficient samples, consider increasing dataset size.")
-            else:
-                raise RuntimeError("Cannot find valid samples, check `data/README.md` for the data format.")
+    # TODO, 待会补充
+    # if training_args.should_log:
+    #     try:
+    #         print("eval example:" if is_eval else "training example:")
+    #         dataset_processor.print_data_example(next(iter(dataset)))
+    #     except StopIteration:
+    #         if stage == "pt":
+    #             raise RuntimeError("Cannot find sufficient samples, consider increasing dataset size.")
+    #         else:
+    #             raise RuntimeError("Cannot find valid samples, check `data/README.md` for the data format.")
 
     return dataset
 
@@ -316,8 +344,8 @@ def get_dataset(
             eval_dataset = _get_preprocessed_dataset(
                 eval_dataset, data_args, training_args, stage, template, tokenizer, processor, is_eval=True
             )
-
-        dataset_dict = split_dataset(dataset, eval_dataset, data_args, seed=training_args.seed)
+        # 这里出来的 dataset 都是一条原始样本的
+        dataset_dict = split_dataset(dataset, eval_dataset, data_args, seed=training_args.seed)     # 按照原始样本切分
         if data_args.tokenized_path is not None:  # save tokenized dataset to disk
             if training_args.should_save:
                 dataset_dict.save_to_disk(data_args.tokenized_path)

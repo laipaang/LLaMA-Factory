@@ -157,6 +157,70 @@ class TargetingDatasetConverter(DatasetConverter):
         }
         return output
 
+
+@dataclass
+class RlhfDatasetConverter(DatasetConverter):
+    def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
+        src = []
+        tgt = []
+        is_use_sft_loss, is_use_cls_loss, is_use_tw_loss, cls_softlabel, tw_softlabel = [], [], [], [], []
+        scores = []
+        rank = []
+
+        if self.dataset_attr.tgt and example[self.dataset_attr.tgt]:
+            tgt_response_list = example[self.dataset_attr.tgt].split("[SEPBID]")
+            
+            cur_src = example[self.dataset_attr.src]
+
+            for tgt_response in tgt_response_list:
+                src.append(cur_src)
+
+                tgt_reward_str_list = tgt_response.split("[SEP]")
+                tgt.append(tgt_reward_str_list[0])
+                
+                score_list = tgt_reward_str_list[1].split(" ")
+
+                is_sft = float(tgt_reward_str_list[2])
+                tag = int(tgt_reward_str_list[3])
+
+                is_use_sft_loss.append(is_sft)
+
+                qlq_list = [float(i) for i in score_list[0].split('_')]
+                is_dishang = float(score_list[1])
+
+                scores.append(float(score_list[-1]))
+                rank.append(int(tgt_reward_str_list[4]))
+
+                cls_softlabel.append(qlq_list)
+                tw_softlabel.append([1.0 - is_dishang, is_dishang])
+                if tag == 0:
+                    is_use_cls_loss.append(0.0)
+                    is_use_tw_loss.append(0.0)
+                elif tag == 1:
+                    is_use_cls_loss.append(1.0)
+                    is_use_tw_loss.append(0.0)
+                elif tag == 2:
+                    is_use_cls_loss.append(0.0)
+                    is_use_tw_loss.append(1.0)  
+                elif tag == 3:
+                    is_use_cls_loss.append(1.0)
+                    is_use_tw_loss.append(1.0)  
+
+        output = {
+            "_src": src,
+            "_tgt": tgt,
+            "_is_use_sft_loss": is_use_sft_loss,
+            "_cls_soft_label": cls_softlabel,
+            "_is_use_cls_loss": is_use_cls_loss,
+            "_tw_soft_label": tw_softlabel,
+            "_is_use_tw_loss": is_use_tw_loss,
+            "_scores": scores,
+            "_rank": rank,
+        }
+
+        return output
+
+
 @dataclass
 class SharegptDatasetConverter(DatasetConverter):
     def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
@@ -259,6 +323,7 @@ DATASET_CONVERTERS = {
     "alpaca": AlpacaDatasetConverter,
     "sharegpt": SharegptDatasetConverter,
     "targeting": TargetingDatasetConverter,
+    "rlhf": RlhfDatasetConverter,
 }
 
 
