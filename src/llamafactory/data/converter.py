@@ -116,10 +116,10 @@ class NoTemplateDatasetConverter(DatasetConverter):
         src = []
         if self.dataset_attr.src and example[self.dataset_attr.src]:
             src.append(example[self.dataset_attr.src])
-        
+
         tgt = []
         if self.dataset_attr.tgt and example[self.dataset_attr.tgt]:
-            tgt.append(example[self.dataset_attr.tgt])  
+            tgt.append(example[self.dataset_attr.tgt])
 
         output = {
             "_src": src,
@@ -158,11 +158,11 @@ class TargetingDatasetConverter(DatasetConverter):
                 is_use_tw_loss.append(0.0)
             elif tag == 2:
                 is_use_cls_loss.append(0.0)
-                is_use_tw_loss.append(1.0)  
+                is_use_tw_loss.append(1.0)
             elif tag == 3:
                 is_use_cls_loss.append(1.0)
-                is_use_tw_loss.append(1.0)  
-            tgt.append(example[self.dataset_attr.tgt])  
+                is_use_tw_loss.append(1.0)
+            tgt.append(example[self.dataset_attr.tgt])
 
         output = {
             "_src": src,

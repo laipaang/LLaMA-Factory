@@ -264,11 +264,6 @@ class TargetingDatasetProcessor(DatasetProcessor):
             model_inputs["input_ids"].append(input_ids)
             model_inputs["attention_mask"].append([1] * len(input_ids))
             model_inputs["labels"].append(label_ids)
-            model_inputs["is_use_sft_loss"].append(examples["_is_use_sft_loss"][i])
-            model_inputs["cls_soft_label"].append(examples["_cls_soft_label"][i][0])
-            model_inputs["is_use_cls_loss"].append(examples["_is_use_cls_loss"][i])
-            model_inputs["tw_soft_label"].append(examples["_tw_soft_label"][i][0])
-            model_inputs["is_use_tw_loss"].append(examples["_is_use_tw_loss"][i])
 
         return model_inputs
 
@@ -278,10 +273,4 @@ class TargetingDatasetProcessor(DatasetProcessor):
         print("inputs:{}\n".format(self.tokenizer.decode(example["input_ids"], skip_special_tokens=False)))
         print("label_ids:{}\n".format(example["labels"]))
         print(f"labels:{self.tokenizer.decode(valid_labels, skip_special_tokens=False)}\n")
-        print("is_use_sft_loss:{}\n".format(example["is_use_sft_loss"]))
-        print("cls_soft_label:{}\n".format(example["cls_soft_label"]))
-        print("is_use_cls_loss:{}\n".format(example["is_use_cls_loss"]))
-        print("tw_soft_label:{}\n".format(example["tw_soft_label"]))
-        print("is_use_tw_loss:{}\n".format(example["is_use_tw_loss"]))
-
 

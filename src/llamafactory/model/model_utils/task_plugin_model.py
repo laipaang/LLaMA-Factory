@@ -11,7 +11,7 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         super().__init__(config)
         self.model = Qwen2Model(config)
         self.vocab_size = config.vocab_size
-        
+
         #ori lm head
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         #added head
@@ -19,7 +19,7 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         self.jm63_linear = nn.Linear(config.hidden_size, 4)
         self.tw_linear = nn.Linear(config.hidden_size, 2)
         #init
-        self.post_init()       
+        self.post_init()
         #add init distribute
         nn.init.trunc_normal_(self.next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
         nn.init.constant_(self.next_sent_feat_linear.bias, 0.0)
@@ -27,7 +27,7 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         nn.init.constant_(self.jm63_linear.bias, 0.0)
         nn.init.trunc_normal_(self.tw_linear.weight, std=0.02, a=-0.04, b=0.04)
         nn.init.constant_(self.tw_linear.bias, 0.0)
-    
+
     def forward(
         self,
         input_ids=None,
@@ -46,10 +46,10 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            **kwargs           
+            **kwargs
         )
         final_outputs['outputs'] = outputs
-        
+
         hidden_states = outputs.last_hidden_state
         #ori lm head output
         logits = self.lm_head(hidden_states)
@@ -69,11 +69,11 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         lm_loss = torch.tensor(0.0, device=device)
         reward_loss = torch.tensor(0.0, device=device)
         tw_loss = torch.tensor(0.0, device=device)
-    
+
         # 处理 lm_loss
         if 'labels' in kwargs:
             labels = kwargs['labels']
-            shift_logits = logits[..., :-1, :].contiguous() 
+            shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
             loss_per_token = F.cross_entropy(
                 shift_logits.view(-1, self.vocab_size),
@@ -85,7 +85,7 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
             lm_loss = (loss_per_token.sum(dim=1) / (shift_labels != -100).sum(dim=1)).unsqueeze(-1)  # 对 seq_len 取 Mean, 忽略 ignore_index
             is_use_sft_loss = is_use_sft_loss if is_use_sft_loss is not None else torch.tensor(1.0)
             lm_loss = torch.multiply(lm_loss, is_use_sft_loss)
-    
+
         # 处理 reward_loss
         if cls_soft_label is not None:
             log_probs = F.log_softmax(reward_logits, dim=-1)
@@ -98,7 +98,7 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
             log_tw_probs = F.log_softmax(tw_logits, dim=-1)
             tw_loss = F.kl_div(log_tw_probs, tw_soft_label, reduction='none').sum(dim=1, keepdim=True)  # (bsz, 1)
             is_use_tw_loss = is_use_tw_loss if is_use_tw_loss is not None else torch.tensor(0.0)
-            tw_loss = torch.multiply(tw_loss, is_use_tw_loss)   
+            tw_loss = torch.multiply(tw_loss, is_use_tw_loss)
 
         # 计算总损失
         loss = lm_loss + reward_loss + tw_loss
@@ -106,5 +106,5 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         final_outputs['loss'] = loss
         return final_outputs
 
-    
+
 
