@@ -1,32 +1,33 @@
 from distutils.command.config import config
-from transformers import Qwen2PreTrainedModel, Qwen2Model
+from transformers import Qwen2PreTrainedModel, Qwen2Model, Qwen2ForCausalLM
+from transformers.modeling_outputs import CausalLMOutputWithPast
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-class QwenWithTaskPlugin(Qwen2PreTrainedModel):
+class QwenWithTaskPlugin(Qwen2ForCausalLM):  # 修改继承关系
     def __init__(self, config):
         super().__init__(config)
         self.model = Qwen2Model(config)
         self.vocab_size = config.vocab_size
         
-        #ori lm head
+        # 原始LM Head
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        #added head
+        
+        # 新增分类头（保持原始初始化）
         self.next_sent_feat_linear = nn.Linear(config.hidden_size, config.hidden_size)
         self.jm63_linear = nn.Linear(config.hidden_size, 4)
         self.tw_linear = nn.Linear(config.hidden_size, 2)
-        #init
-        self.post_init()       
-        #add init distribute
+        
+        self.post_init()
         nn.init.trunc_normal_(self.next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
         nn.init.constant_(self.next_sent_feat_linear.bias, 0.0)
         nn.init.trunc_normal_(self.jm63_linear.weight, std=0.02, a=-0.04, b=0.04)
         nn.init.constant_(self.jm63_linear.bias, 0.0)
         nn.init.trunc_normal_(self.tw_linear.weight, std=0.02, a=-0.04, b=0.04)
         nn.init.constant_(self.tw_linear.bias, 0.0)
-    
+
     def forward(
         self,
         input_ids=None,
@@ -37,86 +38,67 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         is_use_cls_loss=None,
         tw_soft_label=None,
         is_use_tw_loss=None,
-        **kwargs             #确认是否存在loss计算
+        **kwargs
     ):
-        final_outputs = {}
-        #ori model output, 是否lm head 输出
+        # 原始模型前向传播
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            **kwargs           
+            **kwargs
         )
-        final_outputs['outputs'] = outputs
         
-        hidden_states = outputs.last_hidden_state   # (bsz, seq_len, hidden_size)
+        hidden_states = outputs.last_hidden_state
+        logits = self.lm_head(hidden_states)  # 生成所需的主logits 
 
-        #ori lm head output
-        logits = self.lm_head(hidden_states)    # 用于 sft loss (bsz, seq_len, hidden_size)
-        final_outputs['logits'] = logits
-
-        attention_mask_expanded = attention_mask.unsqueeze(-1)  # [bsz, seq_len, 1]
-        sum_embeddings = torch.sum(hidden_states * attention_mask_expanded, dim=1)  # [bsz, hidden_size]
-        sum_mask = torch.clamp(attention_mask_expanded.sum(dim=1), min=1e-9)  # 防止除以零
-        next_sent_feat = sum_embeddings / sum_mask  # [bsz, hidden_size]
-        next_sent_feat = next_sent_feat.to(self.next_sent_feat_linear.weight.dtype)
-
-        next_sent_feat = self.next_sent_feat_linear(next_sent_feat)  #[batch, hidden_size]
-        next_sent_feat = torch.tanh(next_sent_feat)
-
+        # 保持原有的损失计算逻辑
+        loss = torch.tensor(0.0, device=hidden_states.device)
+        batch_size = hidden_states.size(0)
+        
+        # 池化层计算
+        next_sent_feat = hidden_states[:, -1, :]
+        
+        # 分类头计算
+        next_sent_feat = torch.tanh(self.next_sent_feat_linear(next_sent_feat))
         reward_logits = self.jm63_linear(next_sent_feat)
-
         tw_logits = self.tw_linear(next_sent_feat)
 
-        # probs, tw_probs, logits
-        eps = 1e-10
-        device = logits.device if hasattr(logits, 'device') else 'cpu'
-        loss = torch.tensor(0.0, device=device)
-        lm_loss = torch.tensor(0.0, device=device)
-        reward_loss = torch.tensor(0.0, device=device)
-        tw_loss = torch.tensor(0.0, device=device)
-    
-        # 处理 lm_loss
+        # 语言模型损失计算
         if 'labels' in kwargs:
             labels = kwargs['labels']
-            
-            shift_logits = logits[..., :-1, :].contiguous()  # 拉平做shift对齐
+            shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
-
+            
             loss_per_token = F.cross_entropy(
                 shift_logits.view(-1, self.vocab_size),
                 shift_labels.view(-1),
                 reduction='none',
-                ignore_index=-100  # 假设用-100表示padding
-            )
-            loss_per_token = loss_per_token.view(shift_labels.shape)    # 还原成 (bsz, seq_len)
-            lm_loss = (loss_per_token.sum(dim=1) / (shift_labels != -100).sum(dim=1)).unsqueeze(-1)  # 得到(48, 1)
-            final_outputs['log_seq_prob'] = -lm_loss
+                ignore_index=-100
+            ).view_as(shift_labels)
             
-            if is_use_sft_loss is None:
-                is_use_sft_loss = torch.tensor(1.0, device=device)  # 默认启用
+            lm_loss = (loss_per_token.sum(dim=1) / (shift_labels != -100).sum(dim=1)).unsqueeze(-1)
+            is_use_sft_loss = is_use_sft_loss if is_use_sft_loss is not None else torch.tensor(1.0)
+            loss += (lm_loss * is_use_sft_loss).mean()
 
-            lm_loss = torch.multiply(lm_loss, is_use_sft_loss)
-
-        # 处理 reward_loss
+        # 奖励损失计算
         if cls_soft_label is not None:
             log_probs = F.log_softmax(reward_logits, dim=-1)
-            reward_loss = F.kl_div(log_probs, cls_soft_label, reduction='none').sum(dim=1, keepdim=True)  # (bsz, 1)
-            if is_use_cls_loss is None:
-                is_use_cls_loss = torch.tensor(0.0, device=device)
-            reward_loss = torch.multiply(reward_loss, is_use_cls_loss)
+            reward_loss = F.kl_div(log_probs, cls_soft_label, reduction='none').sum(dim=1, keepdim=True)
+            is_use_cls_loss = is_use_cls_loss if is_use_cls_loss is not None else torch.tensor(0.0)
+            loss += (reward_loss * is_use_cls_loss).mean()
 
-        # 处理 tw_loss
+        # TW损失计算
         if tw_soft_label is not None:
             log_twprobs = F.log_softmax(tw_logits, dim=-1)
-            tw_loss = F.kl_div(log_twprobs, tw_soft_label, reduction='none').sum(dim=1, keepdim=True)  # (bsz, 1)
-            if is_use_tw_loss is None:
-                is_use_tw_loss = torch.tensor(0.0, device=device)
-            tw_loss = torch.multiply(tw_loss, is_use_tw_loss)
+            tw_loss = F.kl_div(log_twprobs, tw_soft_label, reduction='none').sum(dim=1, keepdim=True)
+            is_use_tw_loss = is_use_tw_loss if is_use_tw_loss is not None else torch.tensor(0.0)
+            loss += (tw_loss * is_use_tw_loss).mean()
 
-        # 计算总损失
-        loss = lm_loss + reward_loss + tw_loss
-        loss = loss.mean()
-        final_outputs['loss'] = loss
-        return final_outputs
-
+        # 返回标准格式输出
+        return CausalLMOutputWithPast(
+            loss=loss if loss != 0 else None,  # 无损失时返回None保持兼容性
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions
+        )

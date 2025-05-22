@@ -526,7 +526,7 @@ def compute_targeting_loss(model, inputs, return_outputs=False):
         tw_soft_label=tw_soft_label,
         is_use_tw_loss=is_use_tw_loss
     )
-    loss = outputs['loss']
+    loss = outputs.loss
     return (loss, outputs) if return_outputs else loss
 
 
@@ -551,6 +551,7 @@ def compute_rlhf_loss(model, inputs, return_outputs=False):
     is_use_tw_loss = inputs.pop('is_use_tw_loss', None)
     scores = inputs.pop("scores", None)
     rank = inputs.pop("rank", None)
+    labels = inputs["labels"]
 
     lambda_weight = compute_lambda_weight(scores, rank)       # (bsz, bsz)
     
@@ -563,7 +564,18 @@ def compute_rlhf_loss(model, inputs, return_outputs=False):
         is_use_tw_loss=is_use_tw_loss
     )
 
-    log_seq_probs = outputs['log_seq_prob']
+    logits = outputs.logits
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
+    
+    loss_per_token = F.cross_entropy(
+        shift_logits.view(-1, model.vocab_size),
+        shift_labels.view(-1),
+        reduction='none',
+        ignore_index=-100
+    ).view_as(shift_labels)
+    
+    log_seq_probs = -(loss_per_token.sum(dim=1) / (shift_labels != -100).sum(dim=1)).unsqueeze(-1)  # (bsz, 1)
 
     diff = log_seq_probs.unsqueeze(0) - log_seq_probs.unsqueeze(-1)
 
@@ -576,8 +588,9 @@ def compute_rlhf_loss(model, inputs, return_outputs=False):
     simpo_loss = log_sigma_diff * positive_mask
 
     lambda_simpo_loss = torch.multiply(simpo_loss, lambda_weight)
+
     lambda_simpo_loss = -lambda_simpo_loss.sum(dim=-1)
-    loss = lambda_simpo_loss.mean()
+    loss = lambda_simpo_loss.mean() + outputs.loss
 
     return (loss, outputs) if return_outputs else loss
 
