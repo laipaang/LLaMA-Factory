@@ -99,12 +99,10 @@ def main():
         env.pop('OMPI_COMM_WORLD_LOCAL_RANK', None)
 
         # NOTE: DO NOT USE shell=True to avoid security risk
-        process = subprocess.run(
-            (
+        cmd = (
                 "torchrun --nnodes {nnodes} --node_rank {node_rank} --nproc_per_node {nproc_per_node} "
                 "--master_addr {master_addr} --master_port {master_port} {file_name} {args}"
-            )
-            .format(
+            ).format(
                 nnodes=nnodes,
                 node_rank=node_rank,
                 nproc_per_node=nproc_per_node,
@@ -112,8 +110,10 @@ def main():
                 master_port=master_port,
                 file_name=launcher.__file__,
                 args=" ".join(sys.argv[1:]),
-            )
-            .split(),
+            ).split()
+        logger.info_rank0(f"run cmd:\n{' '.join(cmd)}")
+        process = subprocess.run(
+            cmd,
             env=env,
             check=True,
         )
