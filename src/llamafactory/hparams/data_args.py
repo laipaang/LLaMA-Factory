@@ -111,6 +111,11 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not has judge score loss in targeting."},
     )
+    not_append_system: bool = field(
+        default=False,
+        metadata={"help": "Whether or not add default system."},
+    )
+
     tool_format: Optional[str] = field(
         default=None,
         metadata={"help": "Tool format to use for constructing function calling examples."},

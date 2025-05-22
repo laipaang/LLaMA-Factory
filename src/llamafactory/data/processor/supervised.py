@@ -44,7 +44,7 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         input_ids, labels = self.template.mm_plugin.process_token_ids(
             [], [], images, videos, audios, self.tokenizer, self.processor
         )
-        encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
+        encoded_pairs = self.template.encode_multiturn(self.data_args, self.tokenizer, messages, system, tools)
         total_length = len(input_ids) + (1 if self.template.efficient_eos else 0)
         if self.data_args.mask_history:
             encoded_pairs = encoded_pairs[::-1]  # high priority for last turns
@@ -211,8 +211,10 @@ class TargetingDatasetProcessor(DatasetProcessor):
         # for multiturn examples, we only mask the prompt part in each prompt-response pair.
         model_inputs = defaultdict(list)
         for i in range(len(examples["_src"])):
-            source_ids = self.tokenizer.encode(examples["_src"][i][0], add_special_tokens=False)
-            target_ids = self.tokenizer.encode(examples["_tgt"][i][0], add_special_tokens=False)
+            src_msg = self.template.format_user.apply(content=examples["_src"][i][0])
+            tgt_msg = self.template.format_assistant.apply(content=examples["_tgt"][i][0])
+            source_ids = self.tokenizer.encode(src_msg[0], add_special_tokens=False)
+            target_ids = self.tokenizer.encode(tgt_msg[0], add_special_tokens=False)
             #padding
             source_len, target_len = infer_seqlen(len(source_ids), len(target_ids), self.data_args.cutoff_len)
             source_ids = source_ids[:source_len]
@@ -228,11 +230,6 @@ class TargetingDatasetProcessor(DatasetProcessor):
             model_inputs["input_ids"].append(input_ids)
             model_inputs["attention_mask"].append([1] * len(input_ids))
             model_inputs["labels"].append(label_ids)
-            model_inputs["is_use_sft_loss"].append(examples["_is_use_sft_loss"][i])
-            model_inputs["cls_soft_label"].append(examples["_cls_soft_label"][i][0])
-            model_inputs["is_use_cls_loss"].append(examples["_is_use_cls_loss"][i])
-            model_inputs["tw_soft_label"].append(examples["_tw_soft_label"][i][0])
-            model_inputs["is_use_tw_loss"].append(examples["_is_use_tw_loss"][i])
 
         return model_inputs
 
@@ -242,11 +239,5 @@ class TargetingDatasetProcessor(DatasetProcessor):
         print("inputs:{}\n".format(self.tokenizer.decode(example["input_ids"], skip_special_tokens=False)))
         print("label_ids:{}\n".format(example["labels"]))
         print(f"labels:{self.tokenizer.decode(valid_labels, skip_special_tokens=False)}\n")
-        print("is_use_sft_loss:{}\n".format(example["is_use_sft_loss"]))
-        print("cls_soft_label:{}\n".format(example["cls_soft_label"]))
-        print("is_use_cls_loss:{}\n".format(example["is_use_cls_loss"]))
-        print("tw_soft_label:{}\n".format(example["tw_soft_label"]))
-        print("is_use_tw_loss:{}\n".format(example["is_use_tw_loss"]))
-
 
 

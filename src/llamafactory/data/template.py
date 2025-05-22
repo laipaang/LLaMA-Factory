@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Optional, Union
 
 from typing_extensions import override
 
+from llamafactory.hparams import data_args
+
 from ..extras import logging
 from ..extras.misc import check_version
 from .data_utils import Role
@@ -71,13 +73,14 @@ class Template:
 
     def encode_multiturn(
         self,
+        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str] = None,
         tools: Optional[str] = None,
     ) -> list[tuple[list[int], list[int]]]:
         r"""Return multiple pairs of token ids representing prompts and responses respectively."""
-        encoded_messages = self._encode(tokenizer, messages, system, tools)
+        encoded_messages = self._encode(data_args, tokenizer, messages, system, tools)
         return [(encoded_messages[i], encoded_messages[i + 1]) for i in range(0, len(encoded_messages), 2)]
 
     def extract_tool(self, content: str) -> Union[str, list["FunctionCall"]]:
@@ -113,6 +116,7 @@ class Template:
 
     def _encode(
         self,
+        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str],
@@ -123,7 +127,13 @@ class Template:
         Turn 0: prefix + system + query        resp
         Turn t: query                          resp.
         """
-        system = system if system is not None else self.default_system
+        if system is not None:
+            system = system
+        elif data_args.not_append_system:
+            system = ""
+        else:
+            system = self.default_system
+        #system = system if system is not None else self.default_system
         encoded_messages = []
         for i, message in enumerate(messages):
             elements = []
@@ -216,7 +226,7 @@ class Template:
 
         return " + ".join(slot_items)
 
-    def _get_jinja_template(self, tokenizer: "PreTrainedTokenizer") -> str:
+    def _get_jinja_template(self, tokenizer: "PreTrainedTokenizer", data_args: "DataArguments") -> str:
         r"""Return the jinja template."""
         prefix = self._convert_slots_to_jinja(self.format_prefix.apply(), tokenizer)
         system = self._convert_slots_to_jinja(self.format_system.apply(), tokenizer, placeholder="system_message")
@@ -226,6 +236,9 @@ class Template:
         if prefix:
             jinja_template += "{{ " + prefix + " }}"
 
+        if data_args.not_append_system:
+            system_message = ""
+        
         if self.default_system:
             jinja_template += "{% set system_message = '" + self._jinja_escape(self.default_system) + "' %}"
 
@@ -244,11 +257,11 @@ class Template:
         )
         return jinja_template
 
-    def fix_jinja_template(self, tokenizer: "PreTrainedTokenizer") -> None:
+    def fix_jinja_template(self, tokenizer: "PreTrainedTokenizer", data_args: "DataArguments") -> None:
         r"""Replace the jinja template in the tokenizer."""
         if tokenizer.chat_template is None or self.replace_jinja_template:
             try:
-                tokenizer.chat_template = self._get_jinja_template(tokenizer)
+                tokenizer.chat_template = self._get_jinja_template(tokenizer, data_args)
             except ValueError as e:
                 logger.info_rank0(f"Cannot add this chat template to tokenizer: {e}.")
 
@@ -531,7 +544,7 @@ def get_template_and_fix_tokenizer(tokenizer: "PreTrainedTokenizer", data_args: 
         template.format_tools = ToolFormatter(tool_format=data_args.tool_format)
 
     template.fix_special_tokens(tokenizer)
-    template.fix_jinja_template(tokenizer)
+    template.fix_jinja_template(tokenizer, data_args)
     return template
 
 
@@ -1351,14 +1364,16 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen"),
     default_system="You are a helpful assistant.",
+    replace_jinja_template=True,
+    replace_eos=True,
     stop_words=["<|im_end|>"],
 )
 
 # copied from chatml template
 register_template(
     name="target",
-    format_user=StringFormatter(slots=["<|im_start|>src\n{{content}}<|im_end|>\n<|im_start|>tgt\n"]),
-    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    format_user=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|>\n"]),
+    format_assistant=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|>\n"]),
     stop_words=["<|im_end|>"],
 )
 

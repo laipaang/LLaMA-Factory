@@ -14,7 +14,7 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         #added head
         self.next_sent_feat_linear = nn.Linear(config.hidden_size, config.hidden_size)
         self.jm63_linear = nn.Linear(config.hidden_size, 4)
-        self.tw_linear = nn.Linear(config.hidden_size, 1)
+        self.tw_linear = nn.Linear(config.hidden_size, 2)
         #init
         self.post_init()       
         #add init distribute
@@ -50,16 +50,15 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         hidden_states = outputs.last_hidden_state
         #ori lm head output
         logits = self.lm_head(hidden_states)
+        final_outputs['logits'] = logits
 
         #extra output
-        #output size [bs, seq_len, hidden_size]   确认outputs 是否和zeus里的截断cls mask 的相同
-        #next_sent_feat = outputs[batchids, cls_mask]         #选取所有qid gEnd 对应的位置， decoder only 这里不需要？
-        #next_sent_feat = hidden_states.unsqueeze(1)    #[bs, 1, hidden_size]
-        next_sent_feat = hidden_states[:, 0:1, :]
-        next_sent_feat = self.next_sent_feat_linear(next_sent_feat)  #[batch]
-        next_sent_feat = torch.tanh(next_sent_feat) 
+        attention_mask_expanded = attention_mask.unsqueeze(-1)  # [bsz, seq_len, 1]
+        sum_embeddings = torch.sum(hidden_states * attention_mask_expanded, dim=1)  # [bsz, hidden_size]
+        sum_mask = torch.clamp(attention_mask_expanded.sum(dim=1), min=1e-9) 
+        next_sent_feat = sum_embeddings / sum_mask  # [bsz, hidden_size]
+
         reward_logits = self.jm63_linear(next_sent_feat)  # [batch_size, 2]
-        probs = nn.functional.softmax(reward_logits, dim=-1) 
         tw_logits = self.tw_linear(next_sent_feat)
 
         tw_prob = torch.sigmoid(tw_logits)  # [batch_size, 1]
@@ -77,13 +76,30 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         # 处理 lm_loss
         if 'labels' in kwargs:
             labels = kwargs['labels']
-            lm_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.vocab_size)
+            shift_logits = logits[..., :-1, :].contiguous() 
+            shift_labels = labels[..., 1:].contiguous()
+            loss_per_token = F.cross_entropy(
+                shift_logits.view(-1, self.vocab_size),
+                shift_labels.view(-1),
+                reduction='none',
+                ignore_index=-100  # 假设用-100表示padding
+            )
+            loss_per_token = loss_per_token.view(shift_labels.shape)    # 还原成 (bsz, seq_len)
+            lm_loss = (loss_per_token.sum(dim=1) / (shift_labels != -100).sum(dim=1)).unsqueeze(-1)  # 对 seq_len 取 Mean, 忽略 ignore_index
+
             if is_use_sft_loss is None:
                 is_use_sft_loss = torch.tensor(1.0, device=device)  # 默认启用
             lm_loss = torch.multiply(lm_loss, is_use_sft_loss)
     
         # 处理 reward_loss
         if cls_soft_label is not None:
+            log_probs = F.log_softmax(reward_logits, dim=-1)
+            reward_loss = F.kl_div(log_probs, cls_soft_label, reduction='none').sum(dim=1, keepdim=True)  # (bsz, 1)
+            if is_use_cls_loss is None:
+                is_use_cls_loss = torch.tensor(0.0, device=device)
+            reward_loss = torch.multiply(reward_loss, is_use_cls_loss)
+        
+
             probs_clip = torch.clip(x=probs, min=eps, max=1.0 - eps)  
             log_probs = torch.log(probs_clip)
             reward_loss = -torch.sum(torch.multiply(cls_soft_label, log_probs))
@@ -93,6 +109,13 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
 
         # 处理 tw_loss
         if tw_soft_label is not None:
+            log_tw_probs = F.log_softmax(tw_probs, dim=-1)
+            tw_loss = F.kl_div(log_twprobs, tw_soft_label, reduction='none').sum(dim=1, keepdim=True)  # (bsz, 1)
+            if is_use_tw_loss is None:
+                is_use_tw_loss = torch.tensor(0.0, device=device)
+            tw_loss = torch.multiply(tw_loss, is_use_tw_loss)   
+
+
             tw_probs_clip = torch.clip(tw_probs, min=eps, max=1.0 - eps)
             log_twprobs = torch.log(tw_probs_clip)
             tw_loss = -torch.sum(torch.multiply(tw_soft_label, log_twprobs), axis=1)
