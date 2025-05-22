@@ -31,6 +31,7 @@ from .processor import (
     PretrainDatasetProcessor,
     SupervisedDatasetProcessor,
     TargetingDatasetProcessor,
+    NoTemplateDatasetProcessor,
     UnsupervisedDatasetProcessor,
 )
 
@@ -209,7 +210,9 @@ def _get_dataset_processor(
                 OptimizedTypedSequence.__init__ = __init__
             dataset_processor_class = PackedSupervisedDatasetProcessor
         else:
-            if data_args.targeting:
+            if data_args.no_template:
+                dataset_processor_class = NoTemplateDatasetProcessor
+            elif data_args.targeting:
                 dataset_processor_class = TargetingDatasetProcessor
             else:
                 dataset_processor_class = SupervisedDatasetProcessor

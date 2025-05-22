@@ -111,19 +111,36 @@ class AlpacaDatasetConverter(DatasetConverter):
 
 
 @dataclass
-class TargetingDatasetConverter(DatasetConverter):
+class NoTemplateDatasetConverter(DatasetConverter):
     def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
         src = []
         if self.dataset_attr.src and example[self.dataset_attr.src]:
             src.append(example[self.dataset_attr.src])
         
         tgt = []
+        if self.dataset_attr.tgt and example[self.dataset_attr.tgt]:
+            tgt.append(example[self.dataset_attr.tgt])  
+
+        output = {
+            "_src": src,
+            "_tgt": tgt,
+        }
+        return output
+
+@dataclass
+class TargetingDatasetConverter(DatasetConverter):
+    def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
+        src = []
+        if self.dataset_attr.src and example[self.dataset_attr.src]:
+            src.append(example[self.dataset_attr.src])
+
+        tgt = []
         is_use_sft_loss, is_use_cls_loss, is_use_tw_loss, cls_softlabel, tw_softlabel = [], [], [], [], []
         if self.dataset_attr.tgt and example[self.dataset_attr.tgt]:
             tgt_reward = example[self.dataset_attr.tgt]
             tgt_reward_str_list = tgt_reward.split("[SEP]")
             tgt.append(tgt_reward_str_list[0])
-            
+
             score_list = tgt_reward_str_list[1].split(" ")
             is_sft = float(tgt_reward_str_list[2])
             tag = int(tgt_reward_str_list[3])
@@ -145,6 +162,7 @@ class TargetingDatasetConverter(DatasetConverter):
             elif tag == 3:
                 is_use_cls_loss.append(1.0)
                 is_use_tw_loss.append(1.0)  
+            tgt.append(example[self.dataset_attr.tgt])  
 
         output = {
             "_src": src,
@@ -258,7 +276,8 @@ class SharegptDatasetConverter(DatasetConverter):
 DATASET_CONVERTERS = {
     "alpaca": AlpacaDatasetConverter,
     "sharegpt": SharegptDatasetConverter,
-    "targeting": TargetingDatasetConverter,
+    "target": TargetingDatasetConverter,
+    "notemplate": NoTemplateDatasetConverter,
 }
 
 
