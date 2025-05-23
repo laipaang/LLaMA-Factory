@@ -23,12 +23,13 @@ from transformers.trainer import TRAINING_ARGS_NAME
 from transformers.utils import is_torch_npu_available
 
 from ..extras.constants import LLAMABOARD_CONFIG, PEFT_METHODS, TRAINING_STAGES
-from ..extras.misc import is_gpu_or_npu_available, torch_gc, use_ray
+from ..extras.misc import is_accelerator_available, torch_gc, use_ray
 from ..extras.packages import is_gradio_available
 from .common import (
     DEFAULT_CACHE_DIR,
     DEFAULT_CONFIG_DIR,
     abort_process,
+    calculate_pixels,
     gen_cmd,
     get_save_dir,
     load_args,
@@ -108,7 +109,7 @@ class Runner:
             if not get("eval.output_dir"):
                 return ALERTS["err_no_output_dir"][lang]
 
-        if not from_preview and not is_gpu_or_npu_available():
+        if not from_preview and not is_accelerator_available():
             gr.Warning(ALERTS["warn_no_cuda"][lang])
 
         return ""
@@ -162,7 +163,15 @@ class Runner:
             mask_history=get("train.mask_history"),
             resize_vocab=get("train.resize_vocab"),
             use_llama_pro=get("train.use_llama_pro"),
+            enable_thinking=get("train.enable_thinking"),
             report_to=get("train.report_to"),
+            freeze_vision_tower=get("train.freeze_vision_tower"),
+            freeze_multi_modal_projector=get("train.freeze_multi_modal_projector"),
+            freeze_language_model=get("train.freeze_language_model"),
+            image_max_pixels=calculate_pixels(get("train.image_max_pixels")),
+            image_min_pixels=calculate_pixels(get("train.image_min_pixels")),
+            video_max_pixels=calculate_pixels(get("train.video_max_pixels")),
+            video_min_pixels=calculate_pixels(get("train.video_min_pixels")),
             use_galore=get("train.use_galore"),
             use_apollo=get("train.use_apollo"),
             use_badam=get("train.use_badam"),
@@ -255,12 +264,6 @@ class Runner:
             args["badam_switch_mode"] = get("train.badam_switch_mode")
             args["badam_switch_interval"] = get("train.badam_switch_interval")
             args["badam_update_ratio"] = get("train.badam_update_ratio")
-
-        # report_to
-        if "none" in args["report_to"]:
-            args["report_to"] = "none"
-        elif "all" in args["report_to"]:
-            args["report_to"] = "all"
 
         # swanlab config
         if get("train.use_swanlab"):
@@ -368,6 +371,7 @@ class Runner:
             if args.get("deepspeed", None) is not None:
                 env["FORCE_TORCHRUN"] = "1"
 
+            # NOTE: DO NOT USE shell=True to avoid security risk
             self.trainer = Popen(["llamafactory-cli", "train", save_cmd(args)], env=env)
             yield from self.monitor()
 
