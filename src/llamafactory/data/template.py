@@ -257,7 +257,6 @@ class Template:
         if data_args.template == "target":
             jinja_template += "{% set content = messages[0]['content'] %}"
             jinja_template += "{{ " + user + " }}"
-            jinja_template += "{{ " + assistant + " }}"
         else:
             if self.default_system and not data_args.not_append_system:
                 jinja_template += "{% set system_message = '" + self._jinja_escape(self.default_system) + "' %}"
@@ -1590,8 +1589,8 @@ register_template(
 # copied from chatml template
 register_template(
     name="target",
-    format_user=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|>\n"]),
-    format_assistant=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|>\n"]),
+    format_user=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|><|im_start|>\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>"]),
     stop_words=["<|im_end|>"],
     replace_jinja_template=True,
     replace_eos=True,
