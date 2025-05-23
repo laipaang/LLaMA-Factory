@@ -33,7 +33,7 @@ from .base_engine import BaseEngine, Response
 
 
 if is_sglang_available():
-    from sglang.utils import launch_server_cmd, terminate_process, wait_for_server
+    from sglang.utils import launch_server_cmd, terminate_process, wait_for_server  # type: ignore
 
 
 if TYPE_CHECKING:
@@ -79,6 +79,10 @@ class SGLangEngine(BaseEngine):
         self.template = get_template_and_fix_tokenizer(self.tokenizer, data_args)
         self.template.mm_plugin.expand_mm_tokens = False  # for sglang generate
         self.generating_args = generating_args.to_dict()
+        if model_args.adapter_name_or_path is not None:
+            self.lora_request = True
+        else:
+            self.lora_request = False
 
         launch_cmd = [
             "python3 -m sglang.launch_server",
@@ -90,6 +94,15 @@ class SGLangEngine(BaseEngine):
             f"--download-dir {model_args.cache_dir}",
             "--log-level error",
         ]
+        if self.lora_request:
+            launch_cmd.extend(
+                [
+                    "--max-loras-per-batch 1",
+                    f"--lora-backend {model_args.sglang_lora_backend}",
+                    f"--lora-paths lora0={model_args.adapter_name_or_path[0]}",
+                    "--disable-radix-cache",
+                ]
+            )
         launch_cmd = " ".join(launch_cmd)
         logger.info_rank0(f"Starting SGLang server with command: {launch_cmd}")
         try:
@@ -134,27 +147,19 @@ class SGLangEngine(BaseEngine):
         audios: Optional[list["AudioInput"]] = None,
         **input_kwargs,
     ) -> AsyncIterator[dict[str, Any]]:
-        mm_input_dict = {"images": [], "videos": [], "audios": [], "imglens": [0], "vidlens": [0], "audlens": [0]}
-        if images is not None:
-            mm_input_dict.update({"images": images, "imglens": [len(images)]})
-            if not any(IMAGE_PLACEHOLDER in message["content"] for message in messages):
-                messages[0]["content"] = IMAGE_PLACEHOLDER * len(images) + messages[0]["content"]
+        if images is not None and not any(IMAGE_PLACEHOLDER in message["content"] for message in messages):
+            messages[0]["content"] = IMAGE_PLACEHOLDER * len(images) + messages[0]["content"]
 
-        if videos is not None:
-            mm_input_dict.update({"videos": videos, "vidlens": [len(videos)]})
-            if not any(VIDEO_PLACEHOLDER in message["content"] for message in messages):
-                messages[0]["content"] = VIDEO_PLACEHOLDER * len(videos) + messages[0]["content"]
+        if videos is not None and not any(VIDEO_PLACEHOLDER in message["content"] for message in messages):
+            messages[0]["content"] = VIDEO_PLACEHOLDER * len(videos) + messages[0]["content"]
 
-        if audios is not None:
-            mm_input_dict.update({"audios": audios, "audlens": [len(audios)]})
-            if not any(AUDIO_PLACEHOLDER in message["content"] for message in messages):
-                messages[0]["content"] = AUDIO_PLACEHOLDER * len(audios) + messages[0]["content"]
+        if audios is not None and not any(AUDIO_PLACEHOLDER in message["content"] for message in messages):
+            messages[0]["content"] = AUDIO_PLACEHOLDER * len(audios) + messages[0]["content"]
 
         messages = self.template.mm_plugin.process_messages(
-            messages, mm_input_dict["images"], mm_input_dict["videos"], mm_input_dict["audios"], self.processor
+            messages, images or [], videos or [], audios or [], self.processor
         )
         paired_messages = messages + [{"role": "assistant", "content": ""}]
-        system = system or self.generating_args["default_system"]
         prompt_ids, _ = self.template.encode_oneturn(self.tokenizer, paired_messages, system, tools)
         prompt_length = len(prompt_ids)
 
@@ -207,6 +212,8 @@ class SGLangEngine(BaseEngine):
                 "sampling_params": sampling_params,
                 "stream": True,
             }
+            if self.lora_request:
+                json_data["lora_request"] = ["lora0"]
             response = requests.post(f"{self.base_url}/generate", json=json_data, stream=True)
             if response.status_code != 200:
                 raise RuntimeError(f"SGLang server error: {response.status_code}, {response.text}")
