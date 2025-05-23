@@ -558,7 +558,7 @@ def compute_targeting_loss(model, inputs, return_outputs=False):
         tw_soft_label=tw_soft_label,
         is_use_tw_loss=is_use_tw_loss
     )
-    loss = outputs['loss']
+    loss = outputs.loss
     return (loss, outputs) if return_outputs else loss
 
 def create_custom_scheduler(

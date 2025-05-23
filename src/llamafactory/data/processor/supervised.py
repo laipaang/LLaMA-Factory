@@ -44,7 +44,7 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         input_ids, labels = self.template.mm_plugin.process_token_ids(
             [], [], images, videos, audios, self.tokenizer, self.processor
         )
-        encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools)
+        encoded_pairs = self.template.encode_multiturn(self.data_args, self.tokenizer, messages, system, tools)
         total_length = len(input_ids) + (1 if self.template.efficient_eos else 0)
         if self.data_args.mask_history:
             encoded_pairs = encoded_pairs[::-1]  # high priority for last turns
@@ -206,16 +206,17 @@ class PackedSupervisedDatasetProcessor(SupervisedDatasetProcessor):
 
         return model_inputs
 
-
 @dataclass
-class TargetingDatasetProcessor(DatasetProcessor):
+class NoTemplateDatasetProcessor(DatasetProcessor):
     def preprocess_dataset(self, examples: dict[str, list[Any]]) -> dict[str, list[Any]]:
         # build inputs with format `<bos> X Y <eos>` and labels with format `<ignore> ... <ignore> Y <eos>`
         # for multiturn examples, we only mask the prompt part in each prompt-response pair.
         model_inputs = defaultdict(list)
         for i in range(len(examples["_src"])):
-            source_ids = self.tokenizer.encode(examples["_src"][i][0], add_special_tokens=False)
-            target_ids = self.tokenizer.encode(examples["_tgt"][i][0], add_special_tokens=False)
+            src_msg = self.template.format_user.apply(content=examples["_src"][i][0])
+            tgt_msg = self.template.format_assistant.apply(content=examples["_tgt"][i][0])
+            source_ids = self.tokenizer.encode(src_msg[0], add_special_tokens=False)
+            target_ids = self.tokenizer.encode(tgt_msg[0], add_special_tokens=False)
             #padding
             source_len, target_len = infer_seqlen(len(source_ids), len(target_ids), self.data_args.cutoff_len)
             source_ids = source_ids[:source_len]
@@ -228,6 +229,41 @@ class TargetingDatasetProcessor(DatasetProcessor):
                 input_ids += [self.tokenizer.eos_token_id]
                 label_ids += [self.tokenizer.eos_tok]
 
+            model_inputs["input_ids"].append(input_ids)
+            model_inputs["attention_mask"].append([1] * len(input_ids))
+            model_inputs["labels"].append(label_ids)
+
+        return model_inputs
+
+    def print_data_example(self, example: dict[str, list[int]]) -> None:
+        valid_labels = list(filter(lambda x: x != IGNORE_INDEX, example["labels"]))
+        print("input_ids:{}\n".format(example["input_ids"]))
+        print("inputs:{}\n".format(self.tokenizer.decode(example["input_ids"], skip_special_tokens=False)))
+        print("label_ids:{}\n".format(example["labels"]))
+        print(f"labels:{self.tokenizer.decode(valid_labels, skip_special_tokens=False)}\n")
+
+@dataclass
+class TargetingDatasetProcessor(DatasetProcessor):
+    def preprocess_dataset(self, examples: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        # build inputs with format `<bos> X Y <eos>` and labels with format `<ignore> ... <ignore> Y <eos>`
+        # for multiturn examples, we only mask the prompt part in each prompt-response pair.
+        model_inputs = defaultdict(list)
+        for i in range(len(examples["_src"])):
+            src_msg = self.template.format_user.apply(content=examples["_src"][i][0])
+            tgt_msg = self.template.format_assistant.apply(content=examples["_tgt"][i][0])
+            source_ids = self.tokenizer.encode(src_msg[0], add_special_tokens=False)
+            target_ids = self.tokenizer.encode(tgt_msg[0], add_special_tokens=False)
+            #padding
+            source_len, target_len = infer_seqlen(len(source_ids), len(target_ids), self.data_args.cutoff_len)
+            source_ids = source_ids[:source_len]
+            target_ids = target_ids[:target_len]
+            source_label = [IGNORE_INDEX] * source_len
+            target_label = target_ids
+            input_ids = source_ids + target_ids
+            label_ids = source_label + target_label
+            if self.template.efficient_eos:
+                input_ids += [self.tokenizer.eos_token_id]
+                label_ids += [self.tokenizer.eos_tok]
             model_inputs["input_ids"].append(input_ids)
             model_inputs["attention_mask"].append([1] * len(input_ids))
             model_inputs["labels"].append(label_ids)
@@ -250,6 +286,5 @@ class TargetingDatasetProcessor(DatasetProcessor):
         print("is_use_cls_loss:{}\n".format(example["is_use_cls_loss"]))
         print("tw_soft_label:{}\n".format(example["tw_soft_label"]))
         print("is_use_tw_loss:{}\n".format(example["is_use_tw_loss"]))
-
 
 
