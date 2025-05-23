@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 
-class QwenWithTaskPlugin(Qwen2PreTrainedModel):
+class QwenWithTaskPlugin(Qwen2ForCausalLM):
     def __init__(self, config):
         super().__init__(config)
         self.model = Qwen2Model(config)
@@ -40,7 +40,6 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         is_use_tw_loss=None,
         **kwargs             #确认是否存在loss计算
     ):
-        final_outputs = {}
         #ori model output, 是否lm head 输出
         outputs = self.model(
             input_ids=input_ids,
@@ -48,12 +47,10 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
             position_ids=position_ids,
             **kwargs
         )
-        final_outputs['outputs'] = outputs
 
         hidden_states = outputs.last_hidden_state
         #ori lm head output
         logits = self.lm_head(hidden_states)
-        final_outputs['logits'] = logits
 
         #extra output
         next_sent_feat = hidden_states[:, -1, :]
@@ -103,8 +100,14 @@ class QwenWithTaskPlugin(Qwen2PreTrainedModel):
         # 计算总损失
         loss = lm_loss + reward_loss + tw_loss
         loss = loss.mean()
-        final_outputs['loss'] = loss
-        return final_outputs
+
+        return CausalLMOutputWithPast(
+            loss=loss if loss != 0 else None,  # 无损失时返回None保持兼容性
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions
+        )
 
 
 

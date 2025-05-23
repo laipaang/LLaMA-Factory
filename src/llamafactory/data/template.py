@@ -236,25 +236,27 @@ class Template:
         if prefix:
             jinja_template += "{{ " + prefix + " }}"
 
-        if data_args.not_append_system:
-            system_message = ""
-        
-        if self.default_system:
-            jinja_template += "{% set system_message = '" + self._jinja_escape(self.default_system) + "' %}"
+        if data_args.template == "target":
+            jinja_template += "{% set content = messages[0]['content'] %}"
+            jinja_template += "{{ " + user + " }}"
+            jinja_template += "{{ " + assistant + " }}"
+        else:
+            if self.default_system and not data_args.not_append_system:
+                jinja_template += "{% set system_message = '" + self._jinja_escape(self.default_system) + "' %}"
 
-        jinja_template += (
-            "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}"
-            "{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% endif %}"
-            "{% if system_message is defined %}{{ " + system + " }}{% endif %}"
-            "{% for message in loop_messages %}"
-            "{% set content = message['content'] %}"
-            "{% if message['role'] == 'user' %}"
-            "{{ " + user + " }}"
-            "{% elif message['role'] == 'assistant' %}"
-            "{{ " + assistant + " }}"
-            "{% endif %}"
-            "{% endfor %}"
-        )
+            jinja_template += (
+                "{% if messages[0]['role'] == 'system' %}{% set loop_messages = messages[1:] %}"
+                "{% set system_message = messages[0]['content'] %}{% else %}{% set loop_messages = messages %}{% endif %}"
+                "{% if system_message is defined %}{{ " + system + " }}{% endif %}"
+                "{% for message in loop_messages %}"
+                "{% set content = message['content'] %}"
+                "{% if message['role'] == 'user' %}"
+                "{{ " + user + " }}"
+                "{% elif message['role'] == 'assistant' %}"
+                "{{ " + assistant + " }}"
+                "{% endif %}"
+                "{% endfor %}"
+            )
         return jinja_template
 
     def fix_jinja_template(self, tokenizer: "PreTrainedTokenizer", data_args: "DataArguments") -> None:
@@ -1375,6 +1377,8 @@ register_template(
     format_user=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|>\n"]),
     format_assistant=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|>\n"]),
     stop_words=["<|im_end|>"],
+    replace_jinja_template=True,
+    replace_eos=True,
 )
 
 # copied from chatml template
