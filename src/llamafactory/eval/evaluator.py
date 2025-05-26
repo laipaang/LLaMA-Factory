@@ -114,7 +114,7 @@ class Evaluator:
                     subject_name=categorys[subject]["name"],
                 )
 
-                input_ids, _ = self.template.encode_oneturn(tokenizer=self.tokenizer, messages=messages)
+                input_ids, _ = self.template.encode_oneturn(self.data_args, tokenizer=self.tokenizer, messages=messages)
                 inputs.append({"input_ids": input_ids, "attention_mask": [1] * len(input_ids)})
                 labels.append(messages[-1]["content"])
 
