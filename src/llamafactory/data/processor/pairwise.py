@@ -44,8 +44,8 @@ class PairwiseDatasetProcessor(DatasetProcessor):
         rejected_messages = self.template.mm_plugin.process_messages(
             prompt + [response[1]], images, videos, audios, self.processor
         )
-        prompt_ids, chosen_ids = self.template.encode_oneturn(self.tokenizer, chosen_messages, system, tools)
-        _, rejected_ids = self.template.encode_oneturn(self.tokenizer, rejected_messages, system, tools)
+        prompt_ids, chosen_ids = self.template.encode_oneturn(self.data_args, self.tokenizer, chosen_messages, system, tools)
+        _, rejected_ids = self.template.encode_oneturn(self.data_args, self.tokenizer, rejected_messages, system, tools)
 
         if self.template.efficient_eos:
             chosen_ids += [self.tokenizer.eos_token_id]

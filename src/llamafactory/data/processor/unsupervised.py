@@ -44,7 +44,7 @@ class UnsupervisedDatasetProcessor(DatasetProcessor):
             messages = prompt + [{"role": Role.ASSISTANT.value, "content": ""}]
 
         messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, self.processor)
-        input_ids, labels = self.template.encode_oneturn(self.tokenizer, messages, system, tools)
+        input_ids, labels = self.template.encode_oneturn(self.data_args, self.tokenizer, messages, system, tools)
         if self.template.efficient_eos:
             labels += [self.tokenizer.eos_token_id]
 

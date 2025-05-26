@@ -59,13 +59,14 @@ class Template:
 
     def encode_oneturn(
         self,
+        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str] = None,
         tools: Optional[str] = None,
     ) -> tuple[list[int], list[int]]:
         r"""Return a single pair of token ids representing prompt and response respectively."""
-        encoded_messages = self._encode(tokenizer, messages, system, tools)
+        encoded_messages = self._encode(data_args, tokenizer, messages, system, tools)
         prompt_ids = []
         for encoded_ids in encoded_messages[:-1]:
             prompt_ids += encoded_ids
@@ -416,6 +417,7 @@ class ReasoningTemplate(Template):
     @override
     def encode_oneturn(
         self,
+        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str] = None,
@@ -428,7 +430,7 @@ class ReasoningTemplate(Template):
         if self.enable_thinking is False:  # remove all cot
             messages[-1]["content"] = self.remove_thought(messages[-1]["content"])
 
-        prompt_ids, response_ids = super().encode_oneturn(tokenizer, messages, system, tools)
+        prompt_ids, response_ids = super().encode_oneturn(data_args, tokenizer, messages, system, tools)
         if (
             self.thought_words[0] not in messages[-1]["content"]
             and self.thought_words[1] not in messages[-1]["content"]
@@ -443,6 +445,7 @@ class ReasoningTemplate(Template):
     @override
     def encode_multiturn(
         self,
+        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str] = None,
@@ -453,7 +456,7 @@ class ReasoningTemplate(Template):
             for i in range(1, len(messages), 2):
                 messages[i]["content"] = self.remove_thought(messages[i]["content"])
 
-        encoded_messages = self._encode(tokenizer, messages, system, tools)
+        encoded_messages = self._encode(data_args, tokenizer, messages, system, tools)
         for i in range(0, len(messages), 2):
             if (
                 self.thought_words[0] not in messages[i + 1]["content"]
