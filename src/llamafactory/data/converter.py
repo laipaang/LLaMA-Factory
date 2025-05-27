@@ -283,7 +283,7 @@ DATASET_CONVERTERS = {
     "alpaca": AlpacaDatasetConverter,
     "sharegpt": SharegptDatasetConverter,
     "target": TargetingDatasetConverter,
-    "notemplate": NoTemplateDatasetConverter,
+    "dynamic": NoTemplateDatasetConverter,
 }
 
 
