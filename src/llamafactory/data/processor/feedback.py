@@ -53,8 +53,8 @@ class FeedbackDatasetProcessor(DatasetProcessor):
 
         messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, self.processor)
         kl_messages = self.template.mm_plugin.process_messages(kl_messages, images, videos, audios, self.processor)
-        prompt_ids, response_ids = self.template.encode_oneturn(self.data_args, self.tokenizer, messages, system, tools)
-        kl_prompt_ids, kl_response_ids = self.template.encode_oneturn(self.data_args, self.tokenizer, kl_messages, system, tools)
+        prompt_ids, response_ids = self.template.encode_oneturn(self.tokenizer, messages, system, tools)
+        kl_prompt_ids, kl_response_ids = self.template.encode_oneturn(self.tokenizer, kl_messages, system, tools)
 
         if self.template.efficient_eos:
             response_ids += [self.tokenizer.eos_token_id]

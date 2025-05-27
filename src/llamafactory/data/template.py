@@ -59,14 +59,13 @@ class Template:
 
     def encode_oneturn(
         self,
-        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str] = None,
         tools: Optional[str] = None,
     ) -> tuple[list[int], list[int]]:
         r"""Return a single pair of token ids representing prompt and response respectively."""
-        encoded_messages = self._encode(data_args, tokenizer, messages, system, tools)
+        encoded_messages = self._encode(tokenizer, messages, system, tools)
         prompt_ids = []
         for encoded_ids in encoded_messages[:-1]:
             prompt_ids += encoded_ids
@@ -76,14 +75,13 @@ class Template:
 
     def encode_multiturn(
         self,
-        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str] = None,
         tools: Optional[str] = None,
     ) -> list[tuple[list[int], list[int]]]:
         r"""Return multiple pairs of token ids representing prompts and responses respectively."""
-        encoded_messages = self._encode(data_args, tokenizer, messages, system, tools)
+        encoded_messages = self._encode(tokenizer, messages, system, tools)
         return [(encoded_messages[i], encoded_messages[i + 1]) for i in range(0, len(encoded_messages), 2)]
 
     def extract_tool(self, content: str) -> Union[str, list["FunctionCall"]]:
@@ -132,7 +130,6 @@ class Template:
 
     def _encode(
         self,
-        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str],
@@ -143,13 +140,7 @@ class Template:
         Turn 0: prefix + system + query        resp
         Turn t: query                          resp.
         """
-        if system is not None:
-            system = system
-        elif data_args.not_append_system:
-            system = ""
-        else:
-            system = self.default_system
-        #system = system if system is not None else self.default_system
+        system = system if system is not None else self.default_system
         encoded_messages = []
         for i, message in enumerate(messages):
             elements = []
@@ -255,11 +246,11 @@ class Template:
         if prefix:
             jinja_template += "{{ " + prefix + " }}"
 
-        if data_args.template == "target":
+        if data_args.template == "dynamic":
             jinja_template += "{% set content = messages[0]['content'] %}"
             jinja_template += "{{ " + user + " }}"
         else:
-            if self.default_system and not data_args.not_append_system:
+            if self.default_system:
                 jinja_template += "{% set system_message = '" + self._jinja_escape(self.default_system) + "' %}"
 
             jinja_template += (
@@ -275,6 +266,7 @@ class Template:
                 "{% endif %}"
                 "{% endfor %}"
             )
+
         return jinja_template
 
     def fix_jinja_template(self, tokenizer: "PreTrainedTokenizer", data_args: "DataArguments") -> None:
@@ -417,7 +409,6 @@ class ReasoningTemplate(Template):
     @override
     def encode_oneturn(
         self,
-        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str] = None,
@@ -430,7 +421,7 @@ class ReasoningTemplate(Template):
         if self.enable_thinking is False:  # remove all cot
             messages[-1]["content"] = self.remove_thought(messages[-1]["content"])
 
-        prompt_ids, response_ids = super().encode_oneturn(data_args, tokenizer, messages, system, tools)
+        prompt_ids, response_ids = super().encode_oneturn(tokenizer, messages, system, tools)
         if (
             self.thought_words[0] not in messages[-1]["content"]
             and self.thought_words[1] not in messages[-1]["content"]
@@ -445,7 +436,6 @@ class ReasoningTemplate(Template):
     @override
     def encode_multiturn(
         self,
-        data_args: "DataArguments",
         tokenizer: "PreTrainedTokenizer",
         messages: list[dict[str, str]],
         system: Optional[str] = None,
@@ -456,7 +446,7 @@ class ReasoningTemplate(Template):
             for i in range(1, len(messages), 2):
                 messages[i]["content"] = self.remove_thought(messages[i]["content"])
 
-        encoded_messages = self._encode(data_args, tokenizer, messages, system, tools)
+        encoded_messages = self._encode(tokenizer, messages, system, tools)
         for i in range(0, len(messages), 2):
             if (
                 self.thought_words[0] not in messages[i + 1]["content"]
@@ -1591,7 +1581,9 @@ register_template(
 
 # copied from chatml template
 register_template(
-    name="target",
+    name="dynamic",
+    format_prefix=EmptyFormatter(slots=[""]),
+    format_system=EmptyFormatter(slots=[""]),
     format_user=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|><|im_start|>\n"]),
     format_assistant=StringFormatter(slots=["{{content}}<|im_end|>"]),
     stop_words=["<|im_end|>"],
