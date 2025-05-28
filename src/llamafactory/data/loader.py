@@ -21,7 +21,7 @@ from datasets import Dataset, load_dataset, load_from_disk
 from ..extras import logging
 from ..extras.constants import FILEEXT2TYPE
 from ..extras.misc import check_version, has_tokenized_data
-from .data_converter.converter import align_dataset
+from .converter import align_dataset
 from .data_utils import get_dataset_module, merge_dataset, read_cloud_json, split_dataset
 from .parser import get_dataset_list
 from .processor import (

@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 
 from ...extras import logging
 from ..data_utils import Role
-from .base_converter import DatasetConverter
 
 
 if TYPE_CHECKING:
@@ -36,7 +35,10 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 @dataclass
-class NoTemplateDatasetConverter(DatasetConverter):
+class NoTemplateDatasetConverter:
+    dataset_attr: "DatasetAttr"
+    data_args: "DataArguments"
+    
     def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
         src = []
         if self.dataset_attr.src and example[self.dataset_attr.src]:
