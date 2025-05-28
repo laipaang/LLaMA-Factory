@@ -16,7 +16,9 @@ from .feedback import FeedbackDatasetProcessor
 from .pairwise import PairwiseDatasetProcessor
 from .pretrain import PretrainDatasetProcessor
 from .processor_utils import DatasetProcessor
-from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProcessor, TargetingDatasetProcessor, NoTemplateDatasetProcessor
+from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProcessor
+from .notemplate import NoTemplateDatasetProcessor
+from .nluheadwised import NluHeadDatasetProcessor
 from .unsupervised import UnsupervisedDatasetProcessor
 
 
@@ -28,6 +30,6 @@ __all__ = [
     "PretrainDatasetProcessor",
     "SupervisedDatasetProcessor",
     "NoTemplateDatasetProcessor",
-    "TargetingDatasetProcessor",
+    "NluHeadDatasetProcessor",
     "UnsupervisedDatasetProcessor",
 ]

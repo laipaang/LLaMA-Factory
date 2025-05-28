@@ -30,7 +30,7 @@ from .processor import (
     PairwiseDatasetProcessor,
     PretrainDatasetProcessor,
     SupervisedDatasetProcessor,
-    TargetingDatasetProcessor,
+    NluHeadDatasetProcessor,
     NoTemplateDatasetProcessor,
     UnsupervisedDatasetProcessor,
 )
@@ -225,8 +225,8 @@ def _get_dataset_processor(
         else:
             if data_args.dynamic:
                 dataset_processor_class = NoTemplateDatasetProcessor
-            elif data_args.targeting:
-                dataset_processor_class = TargetingDatasetProcessor
+            elif data_args.target_nlu:
+                dataset_processor_class = NluHeadDatasetProcessor
             else:
                 dataset_processor_class = SupervisedDatasetProcessor
 
