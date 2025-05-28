@@ -111,7 +111,7 @@ class DataArguments:
         default=False,
         metadata={"help": "Enable sequence packing without cross-attention."},
     )
-    targeting: bool = field(
+    target_nlu: bool = field(
         default=False,
         metadata={"help": "Whether or not has judge score loss in targeting."},
     )
