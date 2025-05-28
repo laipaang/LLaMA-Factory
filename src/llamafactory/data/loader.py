@@ -83,12 +83,18 @@ def _load_single_dataset(
         else:
             raise ValueError(f"File {local_path} not found.")
 
-        data_path = FILEEXT2TYPE.get(os.path.splitext(data_files[0])[-1][1:], None)
-        if data_path is None:
-            raise ValueError("Allowed file types: {}.".format(",".join(FILEEXT2TYPE.keys())))
+        if dataset_attr.file_type is None:
+            data_path = FILEEXT2TYPE.get(os.path.splitext(data_files[0])[-1][1:], None)
+            if data_path is None:
+                raise ValueError("Allowed file types: {}.".format(",".join(FILEEXT2TYPE.keys())))
 
-        if any(data_path != FILEEXT2TYPE.get(os.path.splitext(data_file)[-1][1:], None) for data_file in data_files):
-            raise ValueError("File types should be identical.")
+            if any(data_path != FILEEXT2TYPE.get(os.path.splitext(data_file)[-1][1:], None) for data_file in data_files):
+                raise ValueError("File types should be identical.")
+        else:
+            data_path = FILEEXT2TYPE.get(dataset_attr.file_type, None)
+            if data_path is None:
+                raise ValueError("Allowed file types: {}.".format(",".join(FILEEXT2TYPE.keys())))
+            logger.info_rank0(f"Using file type '{data_path}' as specified in dataset_attr.")
     else:
         raise NotImplementedError(f"Unknown load type: {dataset_attr.load_from}.")
 

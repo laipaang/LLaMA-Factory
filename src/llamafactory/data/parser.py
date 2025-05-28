@@ -31,6 +31,8 @@ class DatasetAttr:
     load_from: Literal["hf_hub", "ms_hub", "om_hub", "script", "file"]
     dataset_name: str
     formatting: Literal["alpaca", "sharegpt", "targeting"] = "alpaca"
+    # file type: ["arrow", "csv", "json", "parquet", "text"]
+    file_type: str = None
     ranking: bool = False
     # extra configs
     subset: Optional[str] = None
@@ -75,6 +77,7 @@ class DatasetAttr:
 
     def join(self, attr: dict[str, Any]) -> None:
         self.set_attr("formatting", attr, default="alpaca")
+        self.set_attr("file_type", attr, default=None)
         self.set_attr("ranking", attr, default=False)
         self.set_attr("subset", attr)
         self.set_attr("split", attr, default="train")
