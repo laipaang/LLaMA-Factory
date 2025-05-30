@@ -37,6 +37,7 @@ from .model_utils.mod import convert_pretrained_model_to_mod, load_mod_pretraine
 from .model_utils.unsloth import load_unsloth_pretrained_model
 from .model_utils.valuehead import load_valuehead_params
 from .model_utils.nlu_model.task_plugin_model import QwenWithTaskPlugin
+from .model_utils.dr_model.dr_model import QwenWithDr
 from .patcher import patch_config, patch_model, patch_processor, patch_tokenizer, patch_valuehead_model
 
 
@@ -162,6 +163,8 @@ def load_model(
             else:
                 if model_args.model_use_task_as_plugin == True:
                     load_class = QwenWithTaskPlugin
+                elif model_args.model_use_dr == True:
+                    load_class = QwenWithDr
                 else:
                     load_class = AutoModelForCausalLM
 

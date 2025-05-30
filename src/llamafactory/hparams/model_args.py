@@ -175,7 +175,11 @@ class BaseModelArguments:
         default=False,
         metadata={"help": "Whether to generate nlu head in targeting."},
     )
-
+    model_use_dr: bool = field(
+        default=False,
+        metadata={"help": "Whether to generate dense embedding retrieval in targeting."},
+    )
+    
     def __post_init__(self):
         if self.model_name_or_path is None:
             raise ValueError("Please provide `model_name_or_path`.")

@@ -119,6 +119,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not apply template."},
     )
+    use_dense_retrieval: bool = field(
+        default=False,
+        metadata={"help": "Whether or not use dense retrieval."},
+    )
     tool_format: Optional[str] = field(
         default=None,
         metadata={"help": "Tool format to use for constructing function calling examples."},
