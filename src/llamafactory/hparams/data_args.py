@@ -123,6 +123,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not use dense retrieval."},
     )
+    pnl_dense_retrieval: bool = field(
+        default=False,
+        metadata={"help": "Whether or not use personal dense_retrieval loss in targeting."},
+    )
     tool_format: Optional[str] = field(
         default=None,
         metadata={"help": "Tool format to use for constructing function calling examples."},

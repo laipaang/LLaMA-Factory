@@ -17,6 +17,7 @@ from .pairwise import PairwiseDatasetProcessor
 from .pretrain import PretrainDatasetProcessor
 from .processor_utils import DatasetProcessor
 from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProcessor
+from .pnl_dense_retrieval import PNLDenseRetrievalDatasetProcessor
 from .notemplate import NoTemplateDatasetProcessor
 from .nluheadwised import NluHeadDatasetProcessor
 from .drvised import DrDatasetProcessor
@@ -34,4 +35,5 @@ __all__ = [
     "DrDatasetProcessor",
     "NluHeadDatasetProcessor",
     "UnsupervisedDatasetProcessor",
+    "PNLDenseRetrievalDatasetProcessor"
 ]
