@@ -97,17 +97,17 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         
         if self.use_dense_retrieval:
-            self.dr_head = DenseRetrievalHead(config=config)
+            self.context_feature_model = DenseRetrievalHead(config=config)
             self._init_dr()
 
         # Initialize weights and apply final processing
         self.post_init()
 
     def _init_dr(self):
-        nn.init.trunc_normal_(self.dr_head.dr_next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.dr_head.dr_next_sent_feat_linear.bias, 0.0)
-        nn.init.trunc_normal_(self.dr_head.dr_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.dr_head.dr_linear.bias, 0.0)
+        nn.init.trunc_normal_(self.context_feature_model.dr_next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.context_feature_model.dr_next_sent_feat_linear.bias, 0.0)
+        nn.init.trunc_normal_(self.context_feature_model.dr_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.context_feature_model.dr_linear.bias, 0.0)
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -174,7 +174,7 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
                 batch_size = logits.size(0) 
                 batch_indices = torch.arange(batch_size).unsqueeze(-1).expand(-1, 2)  # shape [batch_size, 2]
                 dr_logits = hidden_states[batch_indices, dr_slice - 1, :]
-                dr_logits = self.dr_head(dr_logits)
+                dr_logits = self.context_feature_model(dr_logits)
                 
                 query_embedding = dr_logits[:, 0, :].squeeze(dim=1).contiguous()
                 ad_embedding = dr_logits[:, 1, :].squeeze(dim=1).contiguous()
