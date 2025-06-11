@@ -18,8 +18,6 @@
 import os
 from typing import TYPE_CHECKING, Optional
 
-from llamafactory.data.collator import TargetingSFTDataCollatorWith4DAttentionMask
-
 from ...data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from ...extras.constants import IGNORE_INDEX
 from ...extras.logging import get_logger
@@ -58,15 +56,15 @@ def run_sft(
         setattr(model, "_hf_peft_config_loaded", True)  # hack here: make model compatible with prediction
 
     data_collator = SFTDataCollatorWith4DAttentionMask(
-            template=template,
-            model=model if not training_args.predict_with_generate else None,
-            pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
-            label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
-            block_diag_attn=model_args.block_diag_attn,
-            attn_implementation=getattr(model.config, "_attn_implementation", None),
-            compute_dtype=model_args.compute_dtype,
-            **tokenizer_module,
-        )
+        template=template,
+        model=model if not training_args.predict_with_generate else None,
+        pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
+        label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+        block_diag_attn=model_args.block_diag_attn,
+        attn_implementation=getattr(model.config, "_attn_implementation", None),
+        compute_dtype=model_args.compute_dtype,
+        **tokenizer_module,
+    )
 
     # Metric utils
     metric_module = {}
