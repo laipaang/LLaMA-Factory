@@ -19,6 +19,7 @@ from .processor_utils import DatasetProcessor
 from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProcessor
 from .notemplate import NoTemplateDatasetProcessor
 from .nluheadwised import NluHeadDatasetProcessor
+from .nluheadwised import PackedNluHeadDatasetProcessor
 from .drvised import DrDatasetProcessor
 from .unsupervised import UnsupervisedDatasetProcessor
 
@@ -33,5 +34,6 @@ __all__ = [
     "NoTemplateDatasetProcessor",
     "DrDatasetProcessor",
     "NluHeadDatasetProcessor",
+    "PackedNluHeadDatasetProcessor",
     "UnsupervisedDatasetProcessor",
 ]
