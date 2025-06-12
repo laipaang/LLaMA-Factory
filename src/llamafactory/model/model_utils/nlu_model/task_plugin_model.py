@@ -1,9 +1,48 @@
 from distutils.command.config import config
+from importlib.metadata import SelectableGroups
 from transformers import Qwen2PreTrainedModel, Qwen2Model, Qwen2ForCausalLM
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers.modeling_outputs import CausalLMOutputWithPast
+
+
+class NluHead(nn.Module):
+    def __init__(self, config, **kwargs):
+        super.__init__()
+
+        if hasattr(config, "hidden_size"):
+            hidden_size = config.hidden_size
+        else:
+            raise ValueError("hidden_size is not defined in config")
+
+        if hasattr(config, "jm63_dim"):
+            jm63_dim = config.jm63_dim
+        else:
+            jm63_dim = 4
+
+        if hasattr(config, "tw_dim"):
+            tw_dim = config.tw_dim
+        else:
+            tw_dim = 3
+
+        self.next_sent_feat_linear = nn.Linear(hidden_size, hidden_size)
+        self.jm63_linear = nn.Linear(hidden_size, jm63_dim)
+        self.tw_linear = nn.Linear(hidden_size, tw_dim)
+
+        #init
+        nn.init.trunc_normal_(self.next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.next_sent_feat_linear.bias, 0.0)
+        nn.init.trunc_normal_(self.jm63_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.jm63_linear.bias, 0.0)
+        nn.init.trunc_normal_(self.tw_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.tw_linear.bias, 0.0)
+
+    def forward(self, hidden_states):
+        next_sent_feat = torch.tanh(self.next_sent_feat_linear(hidden_states))
+        reward_logits = self.jm63_linear(next_sent_feat)  # [batch_size, 2]
+        tw_logits = self.tw_linear(next_sent_feat)
+        return reward_logits, tw_logits
 
 
 class QwenWithTaskPlugin(Qwen2ForCausalLM):
@@ -14,19 +53,12 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
 
         #ori lm head
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        #added head
-        self.next_sent_feat_linear = nn.Linear(config.hidden_size, config.hidden_size)
-        self.jm63_linear = nn.Linear(config.hidden_size, 4)
-        self.tw_linear = nn.Linear(config.hidden_size, 2)
+        #nlu head
+        self.nlu_head = NluHead(config)
+
         #init
         self.post_init()
-        #add init distribute
-        nn.init.trunc_normal_(self.next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.next_sent_feat_linear.bias, 0.0)
-        nn.init.trunc_normal_(self.jm63_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.jm63_linear.bias, 0.0)
-        nn.init.trunc_normal_(self.tw_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.tw_linear.bias, 0.0)
+       
 
     def forward(
         self,
@@ -54,11 +86,8 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
 
         #extra output
         next_sent_feat = hidden_states[:, -1, :]
-        next_sent_feat = torch.tanh(self.next_sent_feat_linear(next_sent_feat))
-
-        reward_logits = self.jm63_linear(next_sent_feat)  # [batch_size, 2]
-        tw_logits = self.tw_linear(next_sent_feat)
-
+        reward_logits, tw_logits = self.nlu_head(next_sent_feat)   
+    
         #probs, tw_probs, logits
         eps = 1e-10
         device = logits.device if hasattr(logits, 'device') else 'cpu'

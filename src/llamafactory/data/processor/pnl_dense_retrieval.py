@@ -25,16 +25,6 @@ class PNLDenseRetrievalDatasetProcessor(DatasetProcessor):
                 src = src_list[pair_idx]
                 tgt = tgt_list[pair_idx]
                 tgt, dr_src, dr_tgt, is_dr = tgt.split('\x01')
-                if 'QUERYCLS' not in src:
-                    src = 'QUERYCLS ' + src.lstrip(' ')
-                if 'QUERYCLS' not in dr_src:
-                    dr_src = 'QUERYCLS ' + dr_src.lstrip(' ')
-                if 'ADCLS' not in dr_tgt:
-                    dr_tgt = 'ADCLS ' + dr_tgt.lstrip(' ')
-
-                # dr_src = dr_src_list[pair_idx]
-                # dr_tgt = dr_tgt_list[pair_idx]
-                # is_dr = use_dr_loss_list[pair_idx]
 
                 # sft src and tgt
                 src_msg = self.template.format_user.apply(content=src)

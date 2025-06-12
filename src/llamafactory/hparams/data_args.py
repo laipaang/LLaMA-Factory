@@ -119,7 +119,7 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not apply template."},
     )
-    use_dense_retrieval: bool = field(
+    use_dense_retrieval_in_agent: bool = field(
         default=False,
         metadata={"help": "Whether or not use dense retrieval."},
     )
