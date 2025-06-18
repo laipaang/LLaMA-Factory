@@ -158,7 +158,7 @@ class UploadCheckpointCallback(TrainerCallback):
     def wait_upload(self):
         # Returns: bool
         if self.is_needed_upload():
-            return self._uploader.wait_all_upload()
+            return self._uploader.wait_all()
         return True
 
 
