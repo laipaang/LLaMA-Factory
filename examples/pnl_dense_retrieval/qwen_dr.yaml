@@ -14,7 +14,7 @@ pnl_dense_retrieval: true
 
 ### dataset
 dataset: train_dataset
-template: qwen
+template: dynamic
 cutoff_len: 2048
 overwrite_cache: true
 preprocessing_num_workers: 32
