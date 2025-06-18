@@ -101,7 +101,7 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
     @override
     def compute_loss(self, model, inputs, *args, **kwargs):
         if self.args.use_task_as_plugin == True:
-            compute_targeting_loss(model, inputs)
+            return compute_targeting_loss(model, inputs)
         return super().compute_loss(model, inputs, *args, **kwargs)
 
     @override
