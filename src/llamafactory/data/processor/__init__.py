@@ -20,7 +20,7 @@ from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProce
 from .pnl_dense_retrieval import PNLDenseRetrievalDatasetProcessor
 from .notemplate import NoTemplateDatasetProcessor
 from .nluheadwised import NluHeadDatasetProcessor
-from .drvised import DrDatasetProcessor
+from .dragentvised import DrAgentDatasetProcessor
 from .unsupervised import UnsupervisedDatasetProcessor
 
 
@@ -32,7 +32,7 @@ __all__ = [
     "PretrainDatasetProcessor",
     "SupervisedDatasetProcessor",
     "NoTemplateDatasetProcessor",
-    "DrDatasetProcessor",
+    "DrAgentDatasetProcessor",
     "NluHeadDatasetProcessor",
     "UnsupervisedDatasetProcessor",
     "PNLDenseRetrievalDatasetProcessor"
