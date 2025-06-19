@@ -94,6 +94,7 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
         self.dr_weight = getattr(config, 'dr_weight', 1)
         self.use_dense_retrieval = getattr(config, 'use_dense_retrieval', False)
         self.dr_temperature = getattr(config, 'dr_temperature', 1)
+        self.is_sft = getattr(config, 'is_sft', 1)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         
         if self.use_dense_retrieval:
@@ -192,8 +193,9 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
                 loss = loss + dr_celoss
 
         if labels is not None:
-            sft_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
-            loss = loss + sft_loss
+            if self.is_sft == 1:
+                sft_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
+                loss = loss + sft_loss * self.is_sft
 
         return CausalLMOutputWithPast(
             loss=loss if loss != 0 else None,
