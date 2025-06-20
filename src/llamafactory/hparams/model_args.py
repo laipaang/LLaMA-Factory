@@ -175,9 +175,9 @@ class BaseModelArguments:
         default=False,
         metadata={"help": "Whether to generate nlu head in targeting."},
     )
-    model_use_dr: bool = field(
+    model_use_dr_in_agent: bool = field(
         default=False,
-        metadata={"help": "Whether to generate dense embedding retrieval in targeting."},
+        metadata={"help": "Whether to generate nlu head in targeting."},
     )
     model_use_pnl_dense_retrieval: bool = field(
         default=False,
