@@ -31,6 +31,7 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):  # 修改继承关系
     def forward(
         self,
         input_ids=None,
+	cls_mask=None,
         attention_mask=None,
         position_ids=None,
         is_use_sft_loss=None,
@@ -56,7 +57,9 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):  # 修改继承关系
         batch_size = hidden_states.size(0)
         
         # 池化层计算
-        next_sent_feat = hidden_states[:, -1, :]
+	cls_mask_expanded = cls_mask.unsqueeze(-1).unsqueeze(-1).expand(-1,-1,hidden_states.size(-1))
+	
+	next_sent_feat = torch.gather(hidden_states, dim=1, index=cls_mask_expanded).squeeze(1)
         
         # 分类头计算
         next_sent_feat = torch.tanh(self.next_sent_feat_linear(next_sent_feat))

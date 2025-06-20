@@ -233,6 +233,7 @@ class TargetingDatasetProcessor(DatasetProcessor):
             model_inputs["is_use_cls_loss"].append(examples["_is_use_cls_loss"][i])
             model_inputs["tw_soft_label"].append(examples["_tw_soft_label"][i][0])
             model_inputs["is_use_tw_loss"].append(examples["_is_use_tw_loss"][i])
+	    model_inputs["cls_mask"].append(len(input_ids)-1)
 
         return model_inputs
 
