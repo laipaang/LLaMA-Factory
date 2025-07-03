@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import sys
 import shutil
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -59,8 +60,10 @@ def _training_function(config: dict[str, Any]) -> None:
     gzshell_bin = None
     # 使用gzshell进行模型上传
     if os.path.exists("utils/gzshell_tool.py") and os.path.exists("afs_tool"):
-        from utils.gzshell_tool import GzshellTool
-        gzshell_bin = "./afs_tool/run.sh"
+        # 导入训练环境的gzshell
+        sys.path.append(os.path.join(os.getcwd(), "utils"))
+        from gzshell_tool import GzshellTool
+        gzshell_bin = "./afs_tool/bin/gzshell"
         upload_cb = UploadCheckpointCallback(GzshellTool(gzshell_bin))
         callbacks.append(upload_cb)
 
