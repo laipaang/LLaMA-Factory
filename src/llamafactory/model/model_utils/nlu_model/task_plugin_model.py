@@ -58,7 +58,7 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
 
         #init
         self.post_init()
-       
+
 
     def forward(
         self,
@@ -70,6 +70,7 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
         is_use_cls_loss=None,
         tw_soft_label=None,
         is_use_tw_loss=None,
+        sample_length=None,
         **kwargs             #确认是否存在loss计算
     ):
         #ori model output, 是否lm head 输出
@@ -81,13 +82,15 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
         )
 
         hidden_states = outputs.last_hidden_state
+        sample_length_expanded = sample_length.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, hidden_states.size(-1))
+        next_sent_feat = torch.gather(hidden_states, dim=1, index=sample_length_expanded).squeeze(1)
         #ori lm head output
         logits = self.lm_head(hidden_states)
 
         #extra output
-        next_sent_feat = hidden_states[:, -1, :]
-        reward_logits, tw_logits = self.nlu_head(next_sent_feat)   
-    
+        #next_sent_feat = hidden_states[:, -1, :]
+        reward_logits, tw_logits = self.nlu_head(next_sent_feat)
+
         #probs, tw_probs, logits
         eps = 1e-10
         device = logits.device if hasattr(logits, 'device') else 'cpu'
