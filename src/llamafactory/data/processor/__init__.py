@@ -22,6 +22,7 @@ from .notemplate import NoTemplateDatasetProcessor
 from .nluheadwised import NluHeadDatasetProcessor
 from .dragentvised import DrAgentDatasetProcessor
 from .unsupervised import UnsupervisedDatasetProcessor
+from .relevance_dense_retrieval import RelevanceDenseRetrievalDatasetProcessor
 
 
 __all__ = [
@@ -35,5 +36,6 @@ __all__ = [
     "DrAgentDatasetProcessor",
     "NluHeadDatasetProcessor",
     "UnsupervisedDatasetProcessor",
-    "PNLDenseRetrievalDatasetProcessor"
+    "PNLDenseRetrievalDatasetProcessor",
+    "RelevanceDenseRetrievalDatasetProcessor"
 ]
