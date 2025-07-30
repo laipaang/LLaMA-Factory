@@ -14,6 +14,9 @@ from torch import Tensor, nn
 import torch.nn.functional as F
 import torch
 import random
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 
 @dataclass
 class DenseRetrievalCausalLMOutputWithPast(ModelOutput):
@@ -55,6 +58,16 @@ def last_token_pool(last_hidden_states: Tensor,
         batch_size = last_hidden_states.shape[0]
         return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
+def shrink(tensor: Tensor, dim: int) -> Tensor:
+    tensor_dim = tensor.shape[-1]
+    if dim > tensor_dim:
+        raise ValueError(
+            f"Dimension {dim} in matryoshka_dims cannot be greater than the model's embedding dimension: {tensor_dim}"
+        )
+    tensor = tensor[..., :dim]
+    tensor = F.normalize(tensor, p=2, dim=-1)
+    return tensor
+
 class DenseRetrievalHead(nn.Module):
     def __init__(self, config, **kwargs):
         super().__init__()
@@ -78,9 +91,9 @@ class DenseRetrievalHead(nn.Module):
         output = self.tanh(output)
         output = self.dr_linear(output)
         output = self.tanh(output)
-        output = output / output.norm(p=2, dim=-1, keepdim=True)
+        # output = output / output.norm(p=2, dim=-1, keepdim=True)
         return output
-
+        
 class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
@@ -90,14 +103,35 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
         super().__init__(config)
         self.model = Qwen2Model(config)
         self.vocab_size = config.vocab_size
-        self.dr_margin = getattr(config, 'dr_margin', 1)
+        self.dr_margin = getattr(config, 'dr_margin', 0)
         self.dr_weight = getattr(config, 'dr_weight', 1)
         self.use_dense_retrieval = getattr(config, 'use_dense_retrieval', False)
         self.dr_temperature = getattr(config, 'dr_temperature', 1)
         self.is_sft = getattr(config, 'is_sft', 1)
+        self.use_cross_device_batch_negatives = getattr(config, 'use_cross_device_batch_negatives', False)
+
+        # MatryoshkaLoss
+        self.use_mrl_loss = getattr(config, 'use_mrl_loss', False)
+        if self.use_mrl_loss:
+            self.matryoshka_dims = getattr(config, 'matryoshka_dims', [64, 128, 256, 512, 1024])
+            self.matryoshka_weights = getattr(config, 'matryoshka_weights', [1] * len(self.matryoshka_dims)) # n dim loss weight
+            self.n_dims_per_step = getattr(config, 'n_dims_per_step', -1) # If -1, then all dimensions are used. If > 0, then a random sample of n_dims_per_step dimensions are used perstep
+            if self.n_dims_per_step > len(self.matryoshka_dims):
+                raise ValueError(f"n_dims_per_step must be less than or equal to the number of matryoshka_dims, {self.n_dims_per_step} > {len(self.matryoshka_dims)}")
+            self.dr_dim = max(self.matryoshka_dims)
+            config.dr_dim = self.dr_dim # 对模型的dim重新赋值
+
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        
+
+        # 分布式相关属性
+        if self.use_cross_device_batch_negatives and self.use_dense_retrieval:
+            self.is_distributed = dist.is_initialized() if hasattr(dist, 'is_initialized') else False
+            self.rank = dist.get_rank() if self.is_distributed else 0
+            self.world_size = dist.get_world_size() if self.is_distributed else 1
+            self.process_rank = dist.get_rank()
+
         if self.use_dense_retrieval:
+            self.dr_dim = getattr(config, 'dr_dim', 128)
             self.context_feature_model = DenseRetrievalHead(config=config)
             self._init_dr()
 
@@ -109,6 +143,56 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
         nn.init.constant_(self.context_feature_model.dr_next_sent_feat_linear.bias, 0.0)
         nn.init.trunc_normal_(self.context_feature_model.dr_linear.weight, std=0.02, a=-0.04, b=0.04)
         nn.init.constant_(self.context_feature_model.dr_linear.bias, 0.0)
+
+    def _dist_gather_tensor(self, t: Optional[torch.Tensor]):
+        """Gather a tensor from all processes in a distributed setting.
+
+        Args:
+            t (Optional[torch.Tensor]): The input tensor to be gathered. If `None`, no gathering is performed.
+
+        Returns:
+            Union[torch.Tensor, None]: A concatenated tensor from all processes if ``t`` is not ``None``, 
+                otherwise returns ``None``.
+        """
+        if t is None:
+            return None
+        t = t.contiguous()
+
+        all_tensors = [torch.empty_like(t) for _ in range(self.world_size)]
+        dist.all_gather(all_tensors, t)
+
+        all_tensors[self.process_rank] = t
+        all_tensors = torch.cat(all_tensors, dim=0)
+        return all_tensors
+
+    def distributed_in_batch_negatives(self, query_embedding, ad_embedding, dr_margin, dr_temperature, dr_weight, is_dr, dim):
+        """
+        分布式环境下的In-Batch Negatives计算
+        """
+        # 收集所有GPU上的embedding
+        all_query = self._dist_gather_tensor(query_embedding)
+        all_ad = self._dist_gather_tensor(ad_embedding)
+        all_is_dr = self._dist_gather_tensor(is_dr)
+
+        # mrl shrink
+        all_query = shrink(all_query, dim)
+        all_ad = shrink(all_ad, dim)
+
+        dr_matmul = all_query @ all_ad.T
+        
+        batch_size = all_query.size(0)
+        dr_labels = torch.arange(all_query.size(0), device=dr_matmul.device, dtype=torch.long)
+        
+        # 添加margin和temperature
+        margin = torch.full(size=(batch_size,), fill_value=dr_margin, device=dr_matmul.device)
+        margin = torch.diag(margin)
+        dr_preds = dr_matmul - margin
+        dr_preds = dr_preds / dr_temperature
+        
+        # 计算损失
+        dr_celoss = F.cross_entropy(dr_preds, dr_labels, reduction='none')
+        dr_celoss = (dr_celoss * all_is_dr).mean() * dr_weight
+        return dr_celoss
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -180,16 +264,53 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
                 query_embedding = dr_logits[:, 0, :].squeeze(dim=1).contiguous()
                 ad_embedding = dr_logits[:, 1, :].squeeze(dim=1).contiguous()
 
-                dr_matmul = query_embedding @ ad_embedding.T
-
-                margin = torch.full(size=(batch_size,), fill_value=self.dr_margin, device=dr_matmul.device)
-                margin = torch.diag(margin)
-                dr_preds = dr_matmul - margin
-                dr_preds = dr_preds / self.dr_temperature
-                # build dr_labels
-                dr_labels = torch.arange(0, batch_size, 1, dtype=torch.int64, device=dr_logits.device)
-                dr_celoss = F.cross_entropy(dr_preds, dr_labels, reduction='none')
-                dr_celoss = (dr_celoss * is_dr).mean() * self.dr_weight
+                if self.use_mrl_loss:
+                    dr_celoss = torch.tensor(0.0, device=logits.device, dtype=logits.dtype)
+                    dim_indices = range(len(self.matryoshka_dims))
+                    if self.n_dims_per_step > 0 and self.n_dims_per_step < len(dim_indices):
+                        dim_indices = random.sample(dim_indices, self.n_dims_per_step)
+                        dim_indices.sort()
+                    for idx in dim_indices:
+                        dim = self.matryoshka_dims[idx]
+                        weight = self.matryoshka_weights[idx]
+                        
+                        if self.is_distributed:
+                            dr_mrl_celoss = self.distributed_in_batch_negatives(
+                                query_embedding, ad_embedding, 
+                                self.dr_margin, self.dr_temperature, 
+                                weight, is_dr, dim
+                            )
+                        else:
+                            # shrink and cal mrl loss
+                            dr_matmul = shrink(query_embedding, dim) @ shrink(ad_embedding, dim).T
+                            margin = torch.full(size=(batch_size,), fill_value=self.dr_margin, device=dr_matmul.device)
+                            margin = torch.diag(margin)
+                            dr_preds = dr_matmul - margin
+                            dr_preds = dr_preds / self.dr_temperature
+                            dr_labels = torch.arange(0, batch_size, 1, dtype=torch.int64, device=dr_logits.device)
+                            dr_mrl_celoss = F.cross_entropy(dr_preds, dr_labels, reduction='none')
+                            dr_mrl_celoss = (dr_mrl_celoss * is_dr).mean() * weight
+                        dr_celoss += dr_mrl_celoss
+                else:
+                    # normalize
+                    query_embedding = query_embedding / query_embedding.norm(p=2, dim=-1, keepdim=True)
+                    ad_embedding = ad_embedding / ad_embedding.norm(p=2, dim=-1, keepdim=True)
+                    if self.is_distributed:
+                        dr_celoss = self.distributed_in_batch_negatives(
+                            query_embedding, ad_embedding, 
+                            self.dr_margin, self.dr_temperature, 
+                            self.dr_weight, is_dr, self.dr_dim
+                        )
+                    else:
+                        dr_matmul = query_embedding @ ad_embedding.T
+                        margin = torch.full(size=(batch_size,), fill_value=self.dr_margin, device=dr_matmul.device)
+                        margin = torch.diag(margin)
+                        dr_preds = dr_matmul - margin
+                        dr_preds = dr_preds / self.dr_temperature
+                        # build dr_labels
+                        dr_labels = torch.arange(0, batch_size, 1, dtype=torch.int64, device=dr_logits.device)
+                        dr_celoss = F.cross_entropy(dr_preds, dr_labels, reduction='none')
+                        dr_celoss = (dr_celoss * is_dr).mean() * self.dr_weight
                 loss = loss + dr_celoss
 
         if labels is not None:

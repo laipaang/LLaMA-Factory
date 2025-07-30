@@ -167,3 +167,7 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
                 f.write(json.dumps({"prompt": text, "predict": pred, "label": label}, ensure_ascii=False) + "\n")
 
 
+class TargetingSeq2SeqTrainer(CustomSeq2SeqTrainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lm_weih
