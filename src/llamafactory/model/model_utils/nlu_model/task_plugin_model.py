@@ -58,7 +58,6 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
 
         #init
         self.post_init()
-       
 
     def forward(
         self,
@@ -89,8 +88,8 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
 
         #extra output
         #next_sent_feat = hidden_states[:, -1, :]
-        reward_logits, tw_logits = self.nlu_head(next_sent_feat)   
-    
+        reward_logits, tw_logits = self.nlu_head(next_sent_feat)
+
         #probs, tw_probs, logits
         eps = 1e-10
         device = logits.device if hasattr(logits, 'device') else 'cpu'
@@ -140,6 +139,5 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions
         )
-
 
 
