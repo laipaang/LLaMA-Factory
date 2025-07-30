@@ -101,7 +101,7 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
     @override
     def compute_loss(self, model, inputs, *args, **kwargs):
         if self.args.use_task_as_plugin == True:
-            compute_targeting_loss(model, inputs)
+            return compute_targeting_loss(model, inputs)
         return super().compute_loss(model, inputs, *args, **kwargs)
 
     @override
@@ -166,8 +166,3 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
             for text, pred, label in zip(decoded_inputs, decoded_preds, decoded_labels):
                 f.write(json.dumps({"prompt": text, "predict": pred, "label": label}, ensure_ascii=False) + "\n")
 
-
-class TargetingSeq2SeqTrainer(CustomSeq2SeqTrainer):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.lm_weih

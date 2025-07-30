@@ -1593,6 +1593,18 @@ register_template(
 
 # copied from chatml template
 register_template(
+    name="qwen_gt",
+    format_prefix=EmptyFormatter(slots=[""]),
+    format_system=EmptyFormatter(slots=[""]),
+    format_user=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|><|im_start|>"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>"]),
+    stop_words=["<|im_end|>"],
+    replace_jinja_template=True,
+    replace_eos=True,
+)
+
+# copied from chatml template
+register_template(
     name="qwen2_audio",
     format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
     format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 logger = logging.get_logger(__name__)
 
 @dataclass
-class DrDatasetProcessor(DatasetProcessor):
+class DrAgentDatasetProcessor(DatasetProcessor):
     def preprocess_dataset(self, examples: dict[str, list[Any]]) -> dict[str, list[Any]]:
         # build inputs with format `<bos> X Y <eos>` and labels with format `<ignore> ... <ignore> Y <eos>`
         # for multiturn examples, we only mask the prompt part in each prompt-response pair.

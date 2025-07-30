@@ -549,14 +549,15 @@ def compute_targeting_loss(model, inputs, return_outputs=False):
     is_use_cls_loss = inputs.pop('is_use_cls_loss', None)
     tw_soft_label = inputs.pop('tw_soft_label', None)
     is_use_tw_loss = inputs.pop('is_use_tw_loss', None)
-    
+    sample_length = inputs.pop('sample_length', None)
     outputs = model(
         **inputs,
         is_use_sft_loss=is_use_sft_loss,
         cls_soft_label=cls_soft_label,
         is_use_cls_loss=is_use_cls_loss,
         tw_soft_label=tw_soft_label,
-        is_use_tw_loss=is_use_tw_loss
+        is_use_tw_loss=is_use_tw_loss,
+        sample_length=sample_length
     )
     loss = outputs.loss
     return (loss, outputs) if return_outputs else loss

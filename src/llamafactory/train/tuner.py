@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import importlib
 import shutil
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -27,7 +28,7 @@ from ..extras.misc import infer_optim_dtype
 from ..extras.packages import is_ray_available
 from ..hparams import get_infer_args, get_ray_args, get_train_args, read_args
 from ..model import load_model, load_tokenizer
-from .callbacks import LogCallback, PissaConvertCallback, ReporterCallback
+from .callbacks import LogCallback, PissaConvertCallback, ReporterCallback, UploadCheckpointCallback
 from .dpo import run_dpo
 from .kto import run_kto
 from .ppo import run_ppo
@@ -55,6 +56,21 @@ def _training_function(config: dict[str, Any]) -> None:
     model_args, data_args, training_args, finetuning_args, generating_args = get_train_args(args)
 
     callbacks.append(LogCallback())
+
+    gzshell_bin = None
+    # 使用gzshell进行模型上传
+    gzshell_tool_path = "utils/gzshell_tool.py"
+    gzshell_bin_path = "./afs_tool/bin/gzshell"
+    if os.path.exists(gzshell_tool_path) and os.path.exists(gzshell_bin_path):
+        # 动态导入训练环境的gzshell
+        spec = importlib.util.spec_from_file_location("gzshell_tool", gzshell_tool_path)
+        gzshell_tool = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gzshell_tool)
+        # 设置gzshell_bin路径并添加回调
+        gzshell_bin = gzshell_bin_path
+        upload_cb = UploadCheckpointCallback(gzshell_tool.GzshellTool(gzshell_bin))
+        callbacks.append(upload_cb)
+
     if finetuning_args.pissa_convert:
         callbacks.append(PissaConvertCallback())
 
@@ -84,8 +100,24 @@ def _training_function(config: dict[str, Any]) -> None:
     if is_ray_available() and ray.is_initialized():
         return  # if ray is intialized it will destroy the process group on return
 
+    if gzshell_bin is not None:
+        if upload_cb.is_needed_upload():
+            #上传目录下其他文件
+            ckpt_final_dir = os.path.join(training_args.output_dir, "checkpoint-final")
+            exclude_dir = "/checkpoint-.*/"
+            if os.path.exists(ckpt_final_dir):
+                upload_cb.upload_checkpoint(ckpt_final_dir)
+            upload_cb.upload(training_args.output_dir, training_args.output_dir, include=None, exclude=exclude_dir)
+            #等待上传进程全部结束
+            is_upload_succ = upload_cb.wait_upload()
+            if not is_upload_succ:
+                logger.error("Upload failed.")
+                raise RuntimeError("Upload failed.")
+
     try:
         if dist.is_initialized():
+            #debug
+            logger.info(f"rank{torch.distributed.get_rank()} is about to distroy")
             dist.destroy_process_group()
     except Exception as e:
         logger.warning(f"Failed to destroy process group: {e}.")

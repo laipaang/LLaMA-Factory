@@ -6,8 +6,46 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
+class DenseRetrievalHead(nn.Module):
+    def __init__(self, config, **kwargs):
+        super().__init__()
 
-class QwenWithDr(Qwen2ForCausalLM):
+        if hasattr(config, "hidden_size"):
+            hidden_size = config.hidden_size
+        else:
+            raise ValueError(f'hidden_size not found in config.')            
+        if hasattr(config, "dr_dim"):
+            dr_dim = config.dr_dim
+        else:
+            raise ValueError(f'dr_dim not found in config.')            
+
+        self.dr_next_sent_feat_linear = nn.Linear(hidden_size, hidden_size)
+        self.dr_linear = nn.Linear(hidden_size, dr_dim)
+        # self.silu = nn.SiLU()
+        self.tanh = nn.Tanh()
+        #init
+        nn.init.trunc_normal_(self.dr_next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.dr_next_sent_feat_linear.bias, 0.0)
+        nn.init.trunc_normal_(self.dr_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.dr_linear.bias, 0.0)
+
+    def forward(self, hidden_states):
+        next_sent_feat = self.dr_next_sent_feat_linear(hidden_states)
+        next_sent_feat = torch.tanh(next_sent_feat)
+
+        next_sent_feat = self.dr_linear(next_sent_feat)
+        next_sent_feat = torch.tanh(next_sent_feat)
+        next_sent_feat = next_sent_feat.squeeze(1)
+        next_sent_feat_query = next_sent_feat[0::2]
+        next_sent_feat_agent = next_sent_feat[1::2]
+        dr_logits = torch.matmul(next_sent_feat_query, next_sent_feat_agent.T)
+        softmax_margin = torch.full(size=[dr_logits.shape[0]], fill_value=0.0, dtype=torch.float32)
+        margin = torch.diag(softmax_margin)
+        dr_logits = torch.subtract(dr_logits, margin.to(dr_logits.device))
+        return dr_logits
+
+
+class QwenWithDrInAgent(Qwen2ForCausalLM):
     def __init__(self, config):
         super().__init__(config)
         self.model = Qwen2Model(config)
@@ -15,19 +53,11 @@ class QwenWithDr(Qwen2ForCausalLM):
 
         #ori lm head
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-        #added head
-        self.dr_next_sent_feat_linear = nn.Linear(config.hidden_size, config.hidden_size)
-        self.dr_next_sent_feat_linear._name = "dr_pooled_fc"
-        self.dr_linear = nn.Linear(config.hidden_size, 128)
-        self.dr_linear._name = "Xfc5"
+        #dr head
+        self.context_feature_model = DenseRetrievalHead(config)
 
         #init
         self.post_init()
-        nn.init.trunc_normal_(self.dr_next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.dr_next_sent_feat_linear.bias, 0.0)
-        nn.init.trunc_normal_(self.dr_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.dr_linear.bias, 0.0)
-
 
     def forward(
         self,
@@ -51,18 +81,7 @@ class QwenWithDr(Qwen2ForCausalLM):
 
         #extra output
         next_sent_feat = hidden_states[:, -1, :]
-        next_sent_feat = self.dr_next_sent_feat_linear(next_sent_feat)
-        next_sent_feat = torch.tanh(next_sent_feat)
-
-        next_sent_feat = self.dr_linear(next_sent_feat)
-        next_sent_feat = torch.tanh(next_sent_feat)
-        next_sent_feat = next_sent_feat.squeeze(1)
-        next_sent_feat_query = next_sent_feat[0::2]
-        next_sent_feat_agent = next_sent_feat[1::2]
-        dr_logits = torch.matmul(next_sent_feat_query, next_sent_feat_agent.T)
-        softmax_margin = torch.full(size=[dr_logits.shape[0]], fill_value=0.0, dtype=torch.float32)
-        margin = torch.diag(softmax_margin)
-        dr_logits = torch.subtract(dr_logits, margin.to(dr_logits.device))
+        dr_logits = self.context_feature_model(next_sent_feat)
 
         #probs, tw_probs, logits
         eps = 1e-10

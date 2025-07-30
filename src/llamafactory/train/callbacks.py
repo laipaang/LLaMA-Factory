@@ -127,6 +127,40 @@ class SaveProcessorCallback(TrainerCallback):
         if args.should_save:
             self.processor.save_pretrained(args.output_dir)
 
+class UploadCheckpointCallback(TrainerCallback):
+    r"""A callback for 在每一个checkpoint保存后使用gzshell进行上传."""
+
+    def __init__(self, uploader: "GzshellTool") -> None:
+        self._uploader = uploader
+
+    @override
+    def on_save(self, args: "TrainingArguments", state: "TrainerState", control: "TrainerControl", **kwargs):
+        if self.is_needed_upload():
+            checkpoint_dir = os.path.join(args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}")
+            logger.info(f"rank{torch.distributed.get_rank()} start to upload [{checkpoint_dir}].")
+            self.upload_checkpoint(checkpoint_dir)
+
+    def is_needed_upload(self):
+        # 每个节点的第一个进程上传
+        return not torch.distributed.is_initialized() or torch.cuda.current_device() == 0
+
+    def upload(self, local_path: str, remote_path: str, include: str = None, exclude: str = None) -> None:
+        self._uploader.async_upload(local_path, remote_path, include, exclude)
+
+    def upload_checkpoint(self, checkpoint_dir: str) -> None:
+        # 检查 checkpoint_dir 是否存在
+        if not os.path.exists(checkpoint_dir):
+            logger.error(f"Checkpoint directory {checkpoint_dir} does not exist.")
+            return
+        # gzshell上传
+        self.upload(checkpoint_dir, checkpoint_dir)
+
+    def wait_upload(self):
+        # Returns: bool
+        if self.is_needed_upload():
+            return self._uploader.wait_all()
+        return True
+
 
 class PissaConvertCallback(TrainerCallback):
     r"""A callback for converting the PiSSA adapter to a normal one."""

@@ -119,7 +119,7 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not apply template."},
     )
-    use_dense_retrieval: bool = field(
+    use_dense_retrieval_in_agent: bool = field(
         default=False,
         metadata={"help": "Whether or not use dense retrieval."},
     )
@@ -130,6 +130,10 @@ class DataArguments:
     data_custid_dr: bool = field(
         default=False,
         metadata={"help": "Whether or not use custid dense_retrieval loss in targeting."},
+    )
+    use_dense_retrieval_tap: bool = field(
+        default=False,
+        metadata={"help": "Whether or not use dense_retrieval_tap loss in targeting."},
     )
     tool_format: Optional[str] = field(
         default=None,

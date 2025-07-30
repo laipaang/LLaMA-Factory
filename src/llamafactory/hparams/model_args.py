@@ -175,9 +175,9 @@ class BaseModelArguments:
         default=False,
         metadata={"help": "Whether to generate nlu head in targeting."},
     )
-    model_use_dr: bool = field(
+    model_use_dr_in_agent: bool = field(
         default=False,
-        metadata={"help": "Whether to generate dense embedding retrieval in targeting."},
+        metadata={"help": "Whether to generate nlu head in targeting."},
     )
     model_use_pnl_dense_retrieval: bool = field(
         default=False,
@@ -187,6 +187,11 @@ class BaseModelArguments:
         default=False,
         metadata={"help": "Whether to use custid dense retrieval head in targeting."},
     )
+    model_use_dense_retrieval_tap: bool = field(
+        default=False,
+        metadata={"help": "Whether to use dense retrieval head in targeting."},
+    )
+
     def __post_init__(self):
         if self.model_name_or_path is None:
             raise ValueError("Please provide `model_name_or_path`.")
