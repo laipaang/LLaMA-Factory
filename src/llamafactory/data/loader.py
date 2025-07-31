@@ -34,7 +34,8 @@ from .processor import (
     DrAgentDatasetProcessor,
     NoTemplateDatasetProcessor,
     UnsupervisedDatasetProcessor,
-    PNLDenseRetrievalDatasetProcessor
+    PNLDenseRetrievalDatasetProcessor,
+    RelevanceDenseRetrievalDatasetProcessor
 )
 
 
@@ -233,6 +234,8 @@ def _get_dataset_processor(
                 dataset_processor_class = DrAgentDatasetProcessor
             elif data_args.pnl_dense_retrieval:
                 dataset_processor_class = PNLDenseRetrievalDatasetProcessor
+            elif data_args.relevance_dense_retrieval:
+                dataset_processor_class = RelevanceDenseRetrievalDatasetProcessor
             else:
                 dataset_processor_class = SupervisedDatasetProcessor
 

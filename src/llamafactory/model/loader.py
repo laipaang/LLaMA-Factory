@@ -37,7 +37,7 @@ from .model_utils.mod import convert_pretrained_model_to_mod, load_mod_pretraine
 from .model_utils.unsloth import load_unsloth_pretrained_model
 from .model_utils.valuehead import load_valuehead_params
 from .model_utils.nlu_model.task_plugin_model import QwenWithTaskPlugin
-from .model_utils.dr_model import QwenWithDrInAgent, Qwen2ForCausalLMPNLDenseRetrieval
+from .model_utils.dr_model import QwenWithDrInAgent, Qwen2ForCausalLMPNLDenseRetrieval,Qwen2ForCausalLMRelevanceDenseRetrieval
 from .patcher import patch_config, patch_model, patch_processor, patch_tokenizer, patch_valuehead_model
 
 
@@ -167,6 +167,8 @@ def load_model(
                     load_class = QwenWithDrInAgent
                 elif model_args.model_use_pnl_dense_retrieval == True:
                     load_class = Qwen2ForCausalLMPNLDenseRetrieval
+                elif model_args.model_use_relevance_dense_retrieval == True:
+                    load_class = Qwen2ForCausalLMRelevanceDenseRetrieval
                 else:
                     load_class = AutoModelForCausalLM
 

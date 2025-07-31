@@ -183,6 +183,10 @@ class BaseModelArguments:
         default=False,
         metadata={"help": "Whether to use personal rewrite dense retrieval head in targeting."},
     )
+    model_use_relevance_dense_retrieval: bool = field(
+        default=False,
+        metadata={"help": "Whether to use relevance dense retrieval head in targeting."},
+    )
 
     def __post_init__(self):
         if self.model_name_or_path is None:
