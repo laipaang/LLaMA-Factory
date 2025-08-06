@@ -9,7 +9,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 class NluHead(nn.Module):
     def __init__(self, config, **kwargs):
-        super.__init__()
+        super().__init__()
 
         if hasattr(config, "hidden_size"):
             hidden_size = config.hidden_size

@@ -30,7 +30,7 @@ class DatasetAttr:
     # basic configs
     load_from: Literal["hf_hub", "ms_hub", "om_hub", "script", "file"]
     dataset_name: str
-    formatting: Literal["alpaca", "sharegpt", "targeting"] = "alpaca"
+    formatting: Literal["alpaca", "sharegpt", "target_nlu"] = "alpaca"
     # file type: ["arrow", "csv", "json", "parquet", "text"]
     file_type: str = None
     ranking: bool = False
