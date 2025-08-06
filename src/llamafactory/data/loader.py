@@ -16,13 +16,13 @@ import os
 from typing import TYPE_CHECKING, Literal, Optional, Union
 
 import numpy as np
-from datasets import load_dataset, load_from_disk
+from datasets import Dataset, load_dataset, load_from_disk
 
 from ..extras import logging
 from ..extras.constants import FILEEXT2TYPE
 from ..extras.misc import check_version, has_tokenized_data
 from .converter import align_dataset
-from .data_utils import get_dataset_module, merge_dataset, split_dataset
+from .data_utils import get_dataset_module, merge_dataset, read_cloud_json, split_dataset
 from .parser import get_dataset_list
 from .processor import (
     FeedbackDatasetProcessor,
@@ -30,9 +30,12 @@ from .processor import (
     PairwiseDatasetProcessor,
     PretrainDatasetProcessor,
     SupervisedDatasetProcessor,
-    TargetingDatasetProcessor,
+    NluHeadDatasetProcessor,
+    DrAgentDatasetProcessor,
+    NoTemplateDatasetProcessor,
     UnsupervisedDatasetProcessor,
-    RlhfDatasetProcessor
+    PNLDenseRetrievalDatasetProcessor,
+    RelevanceDenseRetrievalDatasetProcessor
 )
 
 
@@ -69,6 +72,9 @@ def _load_single_dataset(
         data_name = dataset_attr.subset
         data_dir = dataset_attr.folder
 
+    elif dataset_attr.load_from == "cloud_file":
+        data_path = dataset_attr.dataset_name
+
     elif dataset_attr.load_from == "file":
         data_files = []
         local_path = os.path.join(data_args.dataset_dir, dataset_attr.dataset_name)
@@ -80,12 +86,18 @@ def _load_single_dataset(
         else:
             raise ValueError(f"File {local_path} not found.")
 
-        data_path = FILEEXT2TYPE.get(os.path.splitext(data_files[0])[-1][1:], None)
-        if data_path is None:
-            raise ValueError("Allowed file types: {}.".format(",".join(FILEEXT2TYPE.keys())))
+        if dataset_attr.file_type is None:
+            data_path = FILEEXT2TYPE.get(os.path.splitext(data_files[0])[-1][1:], None)
+            if data_path is None:
+                raise ValueError("Allowed file types: {}.".format(",".join(FILEEXT2TYPE.keys())))
 
-        if any(data_path != FILEEXT2TYPE.get(os.path.splitext(data_file)[-1][1:], None) for data_file in data_files):
-            raise ValueError("File types should be identical.")
+            if any(data_path != FILEEXT2TYPE.get(os.path.splitext(data_file)[-1][1:], None) for data_file in data_files):
+                raise ValueError("File types should be identical.")
+        else:
+            data_path = FILEEXT2TYPE.get(dataset_attr.file_type, None)
+            if data_path is None:
+                raise ValueError("Allowed file types: {}.".format(",".join(FILEEXT2TYPE.keys())))
+            logger.info_rank0(f"Using file type '{data_path}' as specified in dataset_attr.")
     else:
         raise NotImplementedError(f"Unknown load type: {dataset_attr.load_from}.")
 
@@ -124,6 +136,8 @@ def _load_single_dataset(
             token=model_args.om_hub_token,
             streaming=data_args.streaming,
         )
+    elif dataset_attr.load_from == "cloud_file":
+        dataset = Dataset.from_list(read_cloud_json(data_path), split=dataset_attr.split)
     else:
         dataset = load_dataset(
             path=data_path,
@@ -133,10 +147,12 @@ def _load_single_dataset(
             split=dataset_attr.split,
             cache_dir=model_args.cache_dir,
             token=model_args.hf_hub_token,
-            streaming=data_args.streaming,
             num_proc=data_args.preprocessing_num_workers,
             trust_remote_code=model_args.trust_remote_code,
+            streaming=data_args.streaming and dataset_attr.load_from != "file",
         )
+        if data_args.streaming and dataset_attr.load_from == "file":
+            dataset = dataset.to_iterable_dataset(num_shards=training_args.dataloader_num_workers)
 
     if dataset_attr.num_samples is not None and not data_args.streaming:
         target_num = dataset_attr.num_samples
@@ -163,7 +179,7 @@ def _get_merged_dataset(
     data_args: "DataArguments",
     training_args: "Seq2SeqTrainingArguments",
     stage: Literal["pt", "sft", "rm", "ppo", "kto"],
-    merge: bool = True,
+    return_dict: bool = False,
 ) -> Optional[Union["Dataset", "IterableDataset", dict[str, "Dataset"]]]:
     r"""Return the merged datasets in the standard format."""
     if dataset_names is None:
@@ -175,10 +191,11 @@ def _get_merged_dataset(
             raise ValueError("The dataset is not applicable in the current training stage.")
 
         datasets[dataset_name] = _load_single_dataset(dataset_attr, model_args, data_args, training_args)
-    if merge:
-        return merge_dataset(list(datasets.values()), data_args, seed=training_args.seed)
-    else:
+
+    if return_dict:
         return datasets
+    else:
+        return merge_dataset(list(datasets.values()), data_args, seed=training_args.seed)
 
 
 def _get_dataset_processor(
@@ -209,10 +226,16 @@ def _get_dataset_processor(
                 OptimizedTypedSequence.__init__ = __init__
             dataset_processor_class = PackedSupervisedDatasetProcessor
         else:
-            if data_args.targeting:
-                dataset_processor_class = TargetingDatasetProcessor
-            elif data_args.rlhf:
-                dataset_processor_class = RlhfDatasetProcessor
+            if data_args.dynamic:
+                dataset_processor_class = NoTemplateDatasetProcessor
+            elif data_args.target_nlu:
+                dataset_processor_class = NluHeadDatasetProcessor
+            elif data_args.use_dense_retrieval_in_agent:
+                dataset_processor_class = DrAgentDatasetProcessor
+            elif data_args.pnl_dense_retrieval:
+                dataset_processor_class = PNLDenseRetrievalDatasetProcessor
+            elif data_args.relevance_dense_retrieval:
+                dataset_processor_class = RelevanceDenseRetrievalDatasetProcessor
             else:
                 dataset_processor_class = SupervisedDatasetProcessor
 
@@ -259,42 +282,16 @@ def _get_preprocessed_dataset(
         remove_columns=column_names,
         **kwargs,
     )
-    # 现在 dataset 符合要求, 每条原始样本被放在一个 examples 内部, 接下来需要修改 dataloader 逻辑
-    """
-    {
-        'input_ids': [
-            [seq_1 token_id], [seq_2 token_id]
-        ], 
-        'attention_mask': [
-            [mask_1], [mask_2]
-        ], 
-        'labels': [
-            [label_1 token_id], [label_2 token_id]
-        ], 
-        'is_use_sft_loss': [seq_1 sft tag, seq_2 sft tag], 
-        'is_use_cls_loss': 类似, 
-        'is_use_tw_loss': 类似, 
-        'cls_soft_label': [
-            [qlq_score_1], [qlq_score_2]
-        ], 
-        'tw_soft_label': [
-            [tw_score_1], [tw_score_2]
-        ], 
-        'scores': [click_1, click_2], 
-        'rank': [rank_1, rank_2]
-    }
-    """
 
-    # TODO, 待会补充
-    # if training_args.should_log:
-    #     try:
-    #         print("eval example:" if is_eval else "training example:")
-    #         dataset_processor.print_data_example(next(iter(dataset)))
-    #     except StopIteration:
-    #         if stage == "pt":
-    #             raise RuntimeError("Cannot find sufficient samples, consider increasing dataset size.")
-    #         else:
-    #             raise RuntimeError("Cannot find valid samples, check `data/README.md` for the data format.")
+    if training_args.should_log:
+        try:
+            print("eval example:" if is_eval else "training example:")
+            dataset_processor.print_data_example(next(iter(dataset)))
+        except StopIteration:
+            if stage == "pt":
+                raise RuntimeError("Cannot find sufficient samples, consider increasing dataset size.")
+            else:
+                raise RuntimeError("Cannot find valid samples, check `data/README.md` for the data format.")
 
     return dataset
 
@@ -328,7 +325,12 @@ def get_dataset(
     with training_args.main_process_first(desc="load dataset"):
         dataset = _get_merged_dataset(data_args.dataset, model_args, data_args, training_args, stage)
         eval_dataset = _get_merged_dataset(
-            data_args.eval_dataset, model_args, data_args, training_args, stage, merge=training_args.do_predict
+            data_args.eval_dataset,
+            model_args,
+            data_args,
+            training_args,
+            stage,
+            return_dict=data_args.eval_on_each_dataset,
         )
 
     with training_args.main_process_first(desc="pre-process dataset"):
@@ -344,8 +346,8 @@ def get_dataset(
             eval_dataset = _get_preprocessed_dataset(
                 eval_dataset, data_args, training_args, stage, template, tokenizer, processor, is_eval=True
             )
-        # 这里出来的 dataset 都是一条原始样本的
-        dataset_dict = split_dataset(dataset, eval_dataset, data_args, seed=training_args.seed)     # 按照原始样本切分
+
+        dataset_dict = split_dataset(dataset, eval_dataset, data_args, seed=training_args.seed)
         if data_args.tokenized_path is not None:  # save tokenized dataset to disk
             if training_args.should_save:
                 dataset_dict.save_to_disk(data_args.tokenized_path)

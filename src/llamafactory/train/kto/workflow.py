@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import TYPE_CHECKING, Optional
 
 from ...data import KTODataCollatorWithPadding, get_dataset, get_template_and_fix_tokenizer
@@ -59,9 +60,6 @@ def run_kto(
     else:
         ref_model = create_ref_model(model_args, finetuning_args)
 
-    # Update arguments
-    training_args.remove_unused_columns = False  # important for multimodal and pairwise dataset
-
     # Initialize our Trainer
     trainer = CustomKTOTrainer(
         model=model,
@@ -77,12 +75,18 @@ def run_kto(
     # Training
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
-        trainer.save_model()
+        trainer.save_model(os.path.join(training_args.output_dir, "checkpoint-final"))
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
         if trainer.is_world_process_zero() and finetuning_args.plot_loss:
-            plot_loss(training_args.output_dir, keys=["loss", "eval_loss", "rewards/chosen"])
+            keys = ["loss", "rewards/chosen"]
+            if isinstance(dataset_module.get("eval_dataset"), dict):
+                keys += [f"eval_{key}_loss" for key in dataset_module["eval_dataset"].keys()]
+            else:
+                keys += ["eval_loss"]
+
+            plot_loss(training_args.output_dir, keys=keys)
 
     # Evaluation
     if training_args.do_eval:

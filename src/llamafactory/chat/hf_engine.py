@@ -25,7 +25,6 @@ from typing_extensions import override
 from ..data import get_template_and_fix_tokenizer
 from ..extras import logging
 from ..extras.constants import AUDIO_PLACEHOLDER, IMAGE_PLACEHOLDER, VIDEO_PLACEHOLDER, EngineName
-from ..extras.misc import get_logits_processor
 from ..model import load_model, load_tokenizer
 from .base_engine import BaseEngine, Response
 
@@ -105,7 +104,6 @@ class HuggingfaceEngine(BaseEngine):
             messages, mm_input_dict["images"], mm_input_dict["videos"], mm_input_dict["audios"], processor
         )
         paired_messages = messages + [{"role": "assistant", "content": ""}]
-        system = system or generating_args["default_system"]
         prompt_ids, _ = template.encode_oneturn(tokenizer, paired_messages, system, tools)
         prompt_ids, _ = template.mm_plugin.process_token_ids(
             prompt_ids,
@@ -118,7 +116,7 @@ class HuggingfaceEngine(BaseEngine):
         )
         prompt_length = len(prompt_ids)
         inputs = torch.tensor([prompt_ids], device=model.device)
-        attention_mask = torch.ones_like(inputs, dtype=torch.bool)
+        attention_mask = torch.ones_like(inputs, dtype=torch.long)
 
         do_sample: Optional[bool] = input_kwargs.pop("do_sample", None)
         temperature: Optional[float] = input_kwargs.pop("temperature", None)
@@ -178,7 +176,6 @@ class HuggingfaceEngine(BaseEngine):
             inputs=inputs,
             attention_mask=attention_mask,
             generation_config=GenerationConfig(**generating_args),
-            logits_processor=get_logits_processor(),
         )
 
         mm_inputs = template.mm_plugin.get_mm_inputs(**mm_input_dict, batch_ids=[prompt_ids], processor=processor)

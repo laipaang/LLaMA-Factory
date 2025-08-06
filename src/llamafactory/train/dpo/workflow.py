@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from typing import TYPE_CHECKING, Optional
 
 from ...data import PairwiseDataCollatorWithPadding, get_dataset, get_template_and_fix_tokenizer
@@ -63,9 +64,6 @@ def run_dpo(
     else:
         ref_model = None
 
-    # Update arguments
-    training_args.remove_unused_columns = False  # important for multimodal and pairwise dataset
-
     # Initialize our Trainer
     trainer = CustomDPOTrainer(
         model=model,
@@ -81,7 +79,7 @@ def run_dpo(
     # Training
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
-        trainer.save_model()
+        trainer.save_model(os.path.join(training_args.output_dir, "checkpoint-final"))
         if finetuning_args.include_effective_tokens_per_second:
             train_result.metrics["effective_tokens_per_sec"] = calculate_tps(
                 dataset_module["train_dataset"], train_result.metrics, stage="rm"
@@ -91,7 +89,13 @@ def run_dpo(
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
         if trainer.is_world_process_zero() and finetuning_args.plot_loss:
-            plot_loss(training_args.output_dir, keys=["loss", "eval_loss", "rewards/accuracies"])
+            keys = ["loss", "rewards/accuracies"]
+            if isinstance(dataset_module.get("eval_dataset"), dict):
+                keys += [f"eval_{key}_loss" for key in dataset_module["eval_dataset"].keys()]
+            else:
+                keys += ["eval_loss"]
+
+            plot_loss(training_args.output_dir, keys=keys)
 
     # Evaluation
     if training_args.do_eval:

@@ -16,8 +16,13 @@ from .feedback import FeedbackDatasetProcessor
 from .pairwise import PairwiseDatasetProcessor
 from .pretrain import PretrainDatasetProcessor
 from .processor_utils import DatasetProcessor
-from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProcessor, TargetingDatasetProcessor, RlhfDatasetProcessor
+from .supervised import PackedSupervisedDatasetProcessor, SupervisedDatasetProcessor
+from .pnl_dense_retrieval import PNLDenseRetrievalDatasetProcessor
+from .notemplate import NoTemplateDatasetProcessor
+from .nluheadwised import NluHeadDatasetProcessor
+from .dragentvised import DrAgentDatasetProcessor
 from .unsupervised import UnsupervisedDatasetProcessor
+from .relevance_dense_retrieval import RelevanceDenseRetrievalDatasetProcessor
 
 
 __all__ = [
@@ -27,7 +32,10 @@ __all__ = [
     "PairwiseDatasetProcessor",
     "PretrainDatasetProcessor",
     "SupervisedDatasetProcessor",
-    "TargetingDatasetProcessor",
+    "NoTemplateDatasetProcessor",
+    "DrAgentDatasetProcessor",
+    "NluHeadDatasetProcessor",
     "UnsupervisedDatasetProcessor",
-    "RlhfDatasetProcessor",
+    "PNLDenseRetrievalDatasetProcessor",
+    "RelevanceDenseRetrievalDatasetProcessor"
 ]
