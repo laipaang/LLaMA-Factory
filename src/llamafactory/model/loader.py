@@ -37,8 +37,7 @@ from .model_utils.mod import convert_pretrained_model_to_mod, load_mod_pretraine
 from .model_utils.unsloth import load_unsloth_pretrained_model
 from .model_utils.valuehead import load_valuehead_params
 from .model_utils.nlu_model.task_plugin_model import QwenWithTaskPlugin
-from .model_utils.dr_model import QwenWithDr, Qwen2ForCausalLMPNLDenseRetrieval, CustidDRModel
-from .model_utils.dr_model import QwenWithDrInAgent, Qwen2ForCausalLMPNLDenseRetrieval
+from .model_utils.dr_model import Qwen2ForCausalLMPNLDenseRetrieval, CustidDRModel, QwenWithDrInAgent
 from .model_utils.dr_nlu_model import Qwen2ForCausalLMPNLDenseRetrievalTAP
 from .patcher import patch_config, patch_model, patch_processor, patch_tokenizer, patch_valuehead_model
 
