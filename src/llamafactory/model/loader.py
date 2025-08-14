@@ -39,6 +39,7 @@ from .model_utils.valuehead import load_valuehead_params
 from .model_utils.nlu_model.task_plugin_model import QwenWithTaskPlugin
 from .model_utils.dr_model import Qwen2ForCausalLMPNLDenseRetrieval, CustidDRModel, QwenWithDrInAgent
 from .model_utils.dr_nlu_model import Qwen2ForCausalLMPNLDenseRetrievalTAP
+from .model_utils.dr_model import QwenWithDrInAgent, Qwen2ForCausalLMPNLDenseRetrieval,Qwen2ForCausalLMRelevanceDenseRetrieval
 from .patcher import patch_config, patch_model, patch_processor, patch_tokenizer, patch_valuehead_model
 
 
@@ -172,6 +173,8 @@ def load_model(
                     load_class = CustidDRModel
                 elif model_args.model_use_dense_retrieval_tap == True:
                     load_class = Qwen2ForCausalLMPNLDenseRetrievalTAP
+                elif model_args.model_use_relevance_dense_retrieval == True:
+                    load_class = Qwen2ForCausalLMRelevanceDenseRetrieval
                 else:
                     load_class = AutoModelForCausalLM
 

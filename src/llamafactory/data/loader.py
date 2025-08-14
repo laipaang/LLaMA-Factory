@@ -36,7 +36,8 @@ from .processor import (
     UnsupervisedDatasetProcessor,
     PNLDenseRetrievalDatasetProcessor,
     CustidDRDatasetProcessor,
-    PNLDenseRetrievalTAPDatasetProcessor
+    PNLDenseRetrievalTAPDatasetProcessor,
+    RelevanceDenseRetrievalDatasetProcessor
 )
 
 
@@ -239,6 +240,8 @@ def _get_dataset_processor(
                 dataset_processor_class = CustidDRDatasetProcessor
             elif data_args.use_dense_retrieval_tap:
                 dataset_processor_class = PNLDenseRetrievalTAPDatasetProcessor
+            elif data_args.relevance_dense_retrieval:
+                dataset_processor_class = RelevanceDenseRetrievalDatasetProcessor
             else:
                 dataset_processor_class = SupervisedDatasetProcessor
 

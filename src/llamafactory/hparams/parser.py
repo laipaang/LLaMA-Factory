@@ -399,6 +399,8 @@ def get_train_args(args: Optional[Union[dict[str, Any], list[str]]] = None) -> _
         model_args.block_diag_attn = True
     if data_args.use_dense_retrieval_tap == True:
         model_args.block_diag_attn = True
+    if data_args.relevance_dense_retrieval == True:
+        model_args.block_diag_attn = True
     data_args.packing = data_args.packing if data_args.packing is not None else finetuning_args.stage == "pt"
 
     # Log on each process the small summary
