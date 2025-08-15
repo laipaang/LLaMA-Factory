@@ -18,6 +18,8 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 
+torch.set_printoptions(threshold=float('inf'))  # 完整显示
+
 @dataclass
 class DenseRetrievalCausalLMOutputWithPast(ModelOutput):
     """
@@ -58,6 +60,27 @@ def last_token_pool(last_hidden_states: Tensor,
         batch_size = last_hidden_states.shape[0]
         return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
 
+def compute_energy(emb_a, emb_b, temperature):
+    logits = emb_a @ emb_b.T
+    logits = logits / temperature
+    energy = -temperature * torch.logsumexp(logits, dim=1, keepdim=True)
+    return energy.squeeze()
+
+def compute_hingle_loss(insample_energy, outsample_energy, m_in, m_out, is_dr):
+    # print(f'hingle_loss shape: {torch.pow(F.relu(insample_energy - m_in), 2).shape}, is_dr shape: {is_dr.shape}')
+    loss_term1 = (torch.pow(F.relu(insample_energy - m_in), 2) * is_dr).mean()
+    loss_term2 = (torch.pow(F.relu(m_out - outsample_energy), 2) * is_dr).mean()
+    return loss_term1 + loss_term2
+
+def cal_comsim_score(emb_a, emb_b, margin, temperature):
+    matmul = emb_a @ emb_b.T
+    batch_size = matmul.shape[0]
+    margin = torch.full(size=(batch_size,), fill_value=margin, device=matmul.device)
+    margin = torch.diag(margin)
+    preds = matmul - margin
+    preds = preds / temperature
+    return preds
+
 def shrink(tensor: Tensor, dim: int) -> Tensor:
     tensor_dim = tensor.shape[-1]
     if dim > tensor_dim:
@@ -67,6 +90,18 @@ def shrink(tensor: Tensor, dim: int) -> Tensor:
     tensor = tensor[..., :dim]
     tensor = F.normalize(tensor, p=2, dim=-1)
     return tensor
+
+def cal_inbatch_loss(socres, is_dr, weight):
+    batch_size = socres.shape[0]
+    labels = torch.arange(0, batch_size, 1, dtype=torch.int64, device=socres.device)
+    dr_celoss = F.cross_entropy(socres, labels, reduction='none')
+    # if len(dr_celoss.shape) == 1:
+        # dr_celoss = dr_celoss.unsqueeze(dim=1)
+    # print(f'socres shape: {socres.shape}, dr_celoss shape: {dr_celoss.shape}, is_dr shape: {is_dr.shape}')
+    dr_celoss = dr_celoss.squeeze()
+    is_dr = is_dr.squeeze()
+    dr_celoss = (dr_celoss * is_dr).mean() * weight
+    return dr_celoss
 
 class DenseRetrievalHead(nn.Module):
     def __init__(self, config, **kwargs):
@@ -91,10 +126,26 @@ class DenseRetrievalHead(nn.Module):
         output = self.tanh(output)
         output = self.dr_linear(output)
         output = self.tanh(output)
-        # output = output / output.norm(p=2, dim=-1, keepdim=True)
+        output = output / output.norm(p=2, dim=-1, keepdim=True)
         return output
-        
-class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
+
+
+class DualDenseRetrievalHead(nn.Module):
+    def __init__(self, config, **kwargs):
+        super().__init__()
+        self.dr_model_1 = DenseRetrievalHead(config=config)
+        self.dr_model_2 = DenseRetrievalHead(config=config)
+
+    def forward(self, hidden_states, flag=0):
+        if flag == 0:
+            output = self.dr_model_1(hidden_states)
+        elif flag == 1:
+            output = self.dr_model_2(hidden_states)
+        else:
+            raise ValueError(f'flag must be 0 or 1, but got {flag}')
+        return output
+
+class CustidDRModel(Qwen2PreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
     _tp_plan = {"lm_head": "colwise_rep"}
     _pp_plan = {"lm_head": (["hidden_states"], ["logits"])}
@@ -110,17 +161,14 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
         self.is_sft = getattr(config, 'is_sft', 1)
         self.use_cross_device_batch_negatives = getattr(config, 'use_cross_device_batch_negatives', False)
 
-        # MatryoshkaLoss
-        self.use_mrl_loss = getattr(config, 'use_mrl_loss', False)
-        if self.use_mrl_loss:
-            self.matryoshka_dims = getattr(config, 'matryoshka_dims', [64, 128, 256, 512, 1024])
-            self.matryoshka_weights = getattr(config, 'matryoshka_weights', [1] * len(self.matryoshka_dims)) # n dim loss weight
-            self.n_dims_per_step = getattr(config, 'n_dims_per_step', -1) # If -1, then all dimensions are used. If > 0, then a random sample of n_dims_per_step dimensions are used perstep
-            self.mrl_temperature = getattr(config, 'mrl_temperature', [self.dr_temperature] * len(self.matryoshka_dims))
-            if self.n_dims_per_step > len(self.matryoshka_dims):
-                raise ValueError(f"n_dims_per_step must be less than or equal to the number of matryoshka_dims, {self.n_dims_per_step} > {len(self.matryoshka_dims)}")
-            self.dr_dim = max(self.matryoshka_dims)
-            config.dr_dim = self.dr_dim # 对模型的dim重新赋值
+        self.m_in = getattr(config, 'm_in', -0.64)
+        self.m_out = getattr(config, 'm_out', -0.14)
+        self.ood_temperature = getattr(config, 'ood_temperature', 0.05)
+        self.energy_loss_weight = getattr(config, 'energy_loss_weight', 20)
+
+        self.tw_loss_weight = getattr(config, 'tw_loss_weight', 1)
+        self.tw_temperature = getattr(config, 'tw_temperature', 0.05)
+        self.index_bidword_loss_weight = getattr(config, 'index_bidword_loss_weight', 1)
 
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
@@ -136,18 +184,25 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
 
         if self.use_dense_retrieval:
             self.dr_dim = getattr(config, 'dr_dim', 128)
-            self.context_feature_model = DenseRetrievalHead(config=config)
+            # self.context_feature_model = DenseRetrievalHead(config=config)
+            self.context_feature_model = DualDenseRetrievalHead(config=config)
             self._init_dr()
 
         # Initialize weights and apply final processing
         self.post_init()
 
     def _init_dr(self):
-        nn.init.trunc_normal_(self.context_feature_model.dr_next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.context_feature_model.dr_next_sent_feat_linear.bias, 0.0)
-        nn.init.trunc_normal_(self.context_feature_model.dr_linear.weight, std=0.02, a=-0.04, b=0.04)
-        nn.init.constant_(self.context_feature_model.dr_linear.bias, 0.0)
+        nn.init.trunc_normal_(self.context_feature_model.dr_model_1.dr_next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.context_feature_model.dr_model_1.dr_next_sent_feat_linear.bias, 0.0)
+        nn.init.trunc_normal_(self.context_feature_model.dr_model_1.dr_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.context_feature_model.dr_model_1.dr_linear.bias, 0.0)
 
+        nn.init.trunc_normal_(self.context_feature_model.dr_model_2.dr_next_sent_feat_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.context_feature_model.dr_model_2.dr_next_sent_feat_linear.bias, 0.0)
+        nn.init.trunc_normal_(self.context_feature_model.dr_model_2.dr_linear.weight, std=0.02, a=-0.04, b=0.04)
+        nn.init.constant_(self.context_feature_model.dr_model_2.dr_linear.bias, 0.0)
+
+        
     def _dist_gather_tensor(self, t: Optional[torch.Tensor]):
         """Gather a tensor from all processes in a distributed setting.
 
@@ -177,10 +232,6 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
         all_query = self._dist_gather_tensor(query_embedding)
         all_ad = self._dist_gather_tensor(ad_embedding)
         all_is_dr = self._dist_gather_tensor(is_dr)
-
-        # mrl shrink
-        all_query = shrink(all_query, dim)
-        all_ad = shrink(all_ad, dim)
 
         dr_matmul = all_query @ all_ad.T
         
@@ -230,12 +281,12 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
         cache_position: Optional[torch.LongTensor] = None,
         logits_to_keep: Union[int, torch.Tensor] = 0,
         dr_slice = None,
-        is_dr = 0,
+        tw_label = None,
+        tw_slice = None,
+        is_dr = torch.tensor([[0]]),
         **kwargs: Unpack[KwargsForCausalLM],
     ) -> CausalLMOutputWithPast:
 
-        if len(is_dr.shape) == 1:
-            is_dr = is_dr.unsqueeze(1)
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -253,83 +304,107 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
             **kwargs,
         )
 
-        hidden_states = outputs.last_hidden_state
+        # print('input ids', input_ids)
+        # print('tw_slice', tw_slice-1)
+
+        hidden_states = outputs.last_hidden_state # # batch_size, seq_len, dim
         # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 
         loss = torch.tensor(0.0, device=logits.device, dtype=logits.dtype)
 
+        # if len(is_dr.shape) == 1:
+            # is_dr = is_dr.unsqueeze(dim=1)
         if self.use_dense_retrieval:
-            if dr_slice is not None:
+            if dr_slice is not None and tw_slice is not None:
                 batch_size = logits.size(0) 
-                batch_indices = torch.arange(batch_size).unsqueeze(-1).expand(-1, 2)  # shape [batch_size, 2]
-                dr_logits = hidden_states[batch_indices, dr_slice - 1, :]
-                dr_logits = self.context_feature_model(dr_logits)
-                
-                query_embedding = dr_logits[:, 0, :].squeeze(dim=1).contiguous()
-                ad_embedding = dr_logits[:, 1, :].squeeze(dim=1).contiguous()
+                batch_indices_3 = torch.arange(batch_size).unsqueeze(-1).expand(-1, 3)  # shape [batch_size, 2]
+                batch_indices_4 = torch.arange(batch_size).unsqueeze(-1).expand(-1, 4)  # shape [batch_size, 2]
+                # print(input_ids[batch_indices_3, dr_slice - 1])
+                # print(input_ids[batch_indices_4, tw_slice-1])
+                dr_logits = hidden_states[batch_indices_3, dr_slice - 1, :]
+                # print(tw_slice - 1)
+                dr_logits_tw = hidden_states[batch_indices_4, tw_slice - 1, :]
 
-                mrl_loss_record = []
-                if self.use_mrl_loss:
-                    dr_celoss = torch.tensor(0.0, device=logits.device, dtype=logits.dtype)
-                    dim_indices = range(len(self.matryoshka_dims))
-                    if self.n_dims_per_step > 0 and self.n_dims_per_step < len(dim_indices):
-                        dim_indices = random.sample(dim_indices, self.n_dims_per_step)
-                        dim_indices.sort()
-                    
-                    for idx in dim_indices:
-                        dim = self.matryoshka_dims[idx]
-                        weight = self.matryoshka_weights[idx]
-                        temperature = self.mrl_temperature[idx]
-                        if self.use_cross_device_batch_negatives:
-                            dr_mrl_celoss = self.distributed_in_batch_negatives(
-                                query_embedding, ad_embedding, 
-                                self.dr_margin, temperature, 
-                                weight, is_dr, dim
-                            )
-                            
-                        else:
-                            # shrink and cal mrl loss
-                            dr_matmul = shrink(query_embedding, dim) @ shrink(ad_embedding, dim).T
-                            margin = torch.full(size=(batch_size,), fill_value=self.dr_margin, device=dr_matmul.device)
-                            margin = torch.diag(margin)
-                            dr_preds = dr_matmul - margin
-                            dr_preds = dr_preds / temperature
-                            dr_labels = torch.arange(0, batch_size, 1, dtype=torch.int64, device=dr_logits.device)
-                            dr_mrl_celoss = F.cross_entropy(dr_preds, dr_labels, reduction='none')
-                            dr_mrl_celoss = (dr_mrl_celoss * is_dr).mean() * weight
-                        mrl_loss_record.append(dr_mrl_celoss.item())
-                        dr_celoss += dr_mrl_celoss
+                dr_logits = self.context_feature_model(dr_logits, flag=0)
+                dr_logits_tw = self.context_feature_model(dr_logits_tw, flag=1)
+
+                # dr_embedding
+                src_embedding = dr_logits[:, 0, :].squeeze(dim=1).contiguous()
+                index_fea_embedding = dr_logits[:, 1, :].squeeze(dim=1).contiguous()
+                ood_embedding = dr_logits[:, 2, :].squeeze(dim=1).contiguous()
+                # print(f'src_embedding: {src_embedding.shape}, index_fea_embedding: {index_fea_embedding.shape}, ood_embedding: {ood_embedding.shape}')
+                # tw embedding
+                src_embedding_2 = dr_logits_tw[:, 0, :].squeeze(dim=1).contiguous()
+                index_bidword_fea_embedding = dr_logits_tw[:, 1, :].squeeze(dim=1).contiguous()
+                tw_query_embedding = dr_logits_tw[:, 2, :].squeeze(dim=1).contiguous()
+                tw_bw_embedding = dr_logits_tw[:, 3, :].squeeze(dim=1).contiguous()
+
+                # print(f'dr_logits_tw_qery:{dr_logits_tw_1[:,2,:][0]}; dr_logits_tw_bidword:{dr_logits_tw_1[:,3,:][0]}; tw_query_embedding: {tw_query_embedding[0]}; tw_bw_embedding: {tw_bw_embedding[0]}, ')
+
+                if self.use_cross_device_batch_negatives:
+                    pass
                 else:
-                    # normalize
-                    query_embedding = query_embedding / query_embedding.norm(p=2, dim=-1, keepdim=True)
-                    ad_embedding = ad_embedding / ad_embedding.norm(p=2, dim=-1, keepdim=True)
-                    if self.use_cross_device_batch_negatives:
-                        dr_celoss = self.distributed_in_batch_negatives(
-                            query_embedding, ad_embedding, 
-                            self.dr_margin, self.dr_temperature, 
-                            self.dr_weight, is_dr, self.dr_dim
-                        )
-                    else:
-                        dr_matmul = query_embedding @ ad_embedding.T
-                        margin = torch.full(size=(batch_size,), fill_value=self.dr_margin, device=dr_matmul.device)
-                        margin = torch.diag(margin)
-                        dr_preds = dr_matmul - margin
-                        dr_preds = dr_preds / self.dr_temperature
-                        # build dr_labels
-                        dr_labels = torch.arange(0, batch_size, 1, dtype=torch.int64, device=dr_logits.device)
-                        dr_celoss = F.cross_entropy(dr_preds, dr_labels, reduction='none')
-                        dr_celoss = (dr_celoss * is_dr).mean() * self.dr_weight
-                loss = loss + dr_celoss
+                    pass
 
+                # cal score
+                score_index_fea = cal_comsim_score(src_embedding, index_fea_embedding, self.dr_margin, self.dr_temperature)
+                score_index_bidword = cal_comsim_score(src_embedding_2, index_bidword_fea_embedding, self.dr_margin, self.tw_temperature)
+
+                # inbatch loss 
+                index_fea_loss = cal_inbatch_loss(score_index_fea, is_dr, self.dr_weight)
+                index_bidword_loss = cal_inbatch_loss(score_index_bidword, is_dr, self.index_bidword_loss_weight)
+
+                # mse loss
+                score_tw_mse = F.cosine_similarity(tw_query_embedding, tw_bw_embedding).unsqueeze(dim=1)
+                score_tw_mse = torch.cat([1 - score_tw_mse, score_tw_mse], axis=1)
+                tw_label_mse = tw_label.unsqueeze(dim=1)
+                tw_label_mse = torch.cat([1 - tw_label_mse, tw_label_mse], axis=1)
+                tw_mse_loss = F.mse_loss(score_tw_mse, tw_label_mse, reduction='mean')
+                tw_mse_loss = tw_mse_loss * 100
+                # tw score
+                # score_tw = F.cosine_similarity(tw_query_embedding, tw_bw_embedding).unsqueeze(dim=1)
+                score_tw = tw_query_embedding @ tw_bw_embedding.T
+
+                if random.random() < 0.05:
+                    print(torch.cat([torch.diag(score_tw).squeeze().unsqueeze(1), tw_label.unsqueeze(dim=1)], axis=-1)[0])
+
+                # score_tw = torch.cat([1 - score_tw, score_tw], axis=1) / self.tw_temperature
+                # score_tw = score_tw / self.tw_temperature
+
+                # tw loss
+                tw_label = torch.diag(tw_label)
+                # tw_label = tw_label.unsqueeze(dim=1).contiguous()
+                # tw_label = torch.cat([1 - tw_label, tw_label], axis=1).contiguous()
+                
+                tw_loss = F.cross_entropy(score_tw, tw_label, reduction='mean') # tw_label是分数, soft label
+                # log_probs = F.log_softmax(score_tw, dim=-1)
+                # tw_loss = F.kl_div(log_probs, tw_label, reduction='mean')  # (bsz, 1)
+                # tw_loss = F.kl_div(
+                #     F.log_softmax(score_tw / self.tw_temperature, dim=1),
+                #     F.softmax(tw_label / self.tw_temperature, dim=1),
+                #     reduction='batchmean') * (self.tw_temperature ** 2)  # 缩放系数
+                tw_loss = tw_loss * self.tw_loss_weight
+
+                # ood loss
+                insample_energy = compute_energy(src_embedding, index_fea_embedding, self.ood_temperature)
+                outsample_energy = compute_energy(ood_embedding, index_fea_embedding, self.ood_temperature)
+                energy_loss = compute_hingle_loss(insample_energy, outsample_energy, self.m_in, self.m_out, is_dr)
+                energy_loss = energy_loss * self.energy_loss_weight
+
+                # build dr_labels
+                loss = loss + index_fea_loss + index_bidword_loss + tw_loss + energy_loss + tw_mse_loss
+
+        sft_loss = torch.tensor(0.0, device=logits.device, dtype=logits.dtype)
         if labels is not None:
             if self.is_sft == 1:
                 sft_loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
-                loss = loss + sft_loss * self.is_sft
-        if random.random() < 0.1:
-            mrl_loss_record = list(map(str, mrl_loss_record))
-            print(f'loss: {loss.item()}, sft_loss: {sft_loss.item()}, dr_loss: {dr_celoss.item()}, mrl_loss: {";".join(mrl_loss_record)}')
+                loss = loss + sft_loss
+        
+        # print(f"{loss.shape},{sft_loss.shape}, {index_fea_loss.shape}, {index_bidword_loss.shape}, {tw_loss.shape}, {energy_loss.shape}")
+        if self.use_dense_retrieval and random.random() < 0.1:
+            print(f'loss: {loss.item()}, sft_loss: {sft_loss.item()}, index_fea_loss: {index_fea_loss.item()}, index_bidword_loss: {index_bidword_loss.item()}, tw_mse_loss: {tw_mse_loss.item()}, tw_loss: {tw_loss.item()}, energy_loss: {energy_loss.item()}')
 
         return CausalLMOutputWithPast(
             loss=loss if loss != 0 else None,
@@ -343,7 +418,7 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
 if __name__ =='__main__':
     # model_path = '/Users/chenlei45/projects/transformers/qwen_model'
     model_path = '/root/paddlejob/workspace/env_run/Qwen2.5'
-    model = Qwen2ForCausalLMPNLDenseRetrieval.from_pretrained(model_path)
+    model = CustidDRModel.from_pretrained(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path)
 
     # 测试输入

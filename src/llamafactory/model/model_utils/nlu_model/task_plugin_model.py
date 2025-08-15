@@ -59,7 +59,6 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
         #init
         self.post_init()
 
-
     def forward(
         self,
         input_ids=None,
@@ -140,6 +139,5 @@ class QwenWithTaskPlugin(Qwen2ForCausalLM):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions
         )
-
 
 

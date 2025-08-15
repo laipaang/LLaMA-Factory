@@ -183,6 +183,13 @@ class BaseModelArguments:
         default=False,
         metadata={"help": "Whether to use personal rewrite dense retrieval head in targeting."},
     )
+    model_use_custid_dr: bool = field(
+        default=False,
+        metadata={"help": "Whether to use custid dense retrieval head in targeting."},
+    )
+    model_use_dense_retrieval_tap: bool = field(
+        default=False,
+        metadata={"help": "Whether to use dense retrieval head in targeting."},
     model_use_relevance_dense_retrieval: bool = field(
         default=False,
         metadata={"help": "Whether to use relevance dense retrieval head in targeting."},

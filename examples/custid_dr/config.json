@@ -33,8 +33,10 @@
     "attn_implementation": "sdpa",
     "block_diag_attn": true,
     "use_cross_device_batch_negatives": false,
-    "use_mrl_loss": true,
-    "matryoshka_dims": [64, 128, 256, 512, 1024],
-    "matryoshka_weights": [1, 2, 4, 8, 16],
-    "n_dims_per_step": -1
+    "m_in": -0.64,
+    "m_out": -0.14,
+    "ood_temperature": 0.05,
+    "energy_loss_weight": 20,
+    "tw_loss_weight": 1,
+    "tw_temperature": 0.05
  }
