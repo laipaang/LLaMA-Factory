@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 import torch
+import torch.nn.functional as F
 from transformers import Trainer
 from transformers.integrations import is_deepspeed_zero3_enabled
 from transformers.modeling_utils import is_fsdp_enabled
@@ -561,6 +562,74 @@ def compute_targeting_loss(model, inputs, return_outputs=False):
     )
     loss = outputs.loss
     return (loss, outputs) if return_outputs else loss
+
+
+def compute_lambda_weight(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    inv_log_b = 1.0 / torch.log(1.0 + b)
+
+    diff_inv_log_b = torch.abs(inv_log_b.unsqueeze(1) - inv_log_b.unsqueeze(0))
+
+    new_a = torch.pow(2.0, a)
+    diff_a = torch.abs(new_a.unsqueeze(1) - new_a.unsqueeze(0))
+
+    result_matrix = diff_a * diff_inv_log_b
+
+    return result_matrix
+
+
+def compute_rlhf_loss(model, inputs, return_outputs=False):
+    is_use_sft_loss = inputs.pop('is_use_sft_loss', None)
+    cls_soft_label = inputs.pop('cls_soft_label', None)
+    is_use_cls_loss = inputs.pop('is_use_cls_loss', None)
+    tw_soft_label = inputs.pop('tw_soft_label', None)
+    is_use_tw_loss = inputs.pop('is_use_tw_loss', None)
+    scores = inputs.pop("scores", None)
+    sample_length = inputs.pop("sample_length", None)
+    rank = inputs.pop("rank", None)
+    labels = inputs["labels"]
+
+    lambda_weight = compute_lambda_weight(scores, rank)       # (bsz, bsz)
+    
+    outputs = model(
+        **inputs,
+        is_use_sft_loss=is_use_sft_loss,
+        cls_soft_label=cls_soft_label,
+        is_use_cls_loss=is_use_cls_loss,
+        tw_soft_label=tw_soft_label,
+        is_use_tw_loss=is_use_tw_loss,
+        sample_length=sample_length
+    )
+    
+    logits = outputs.logits
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
+    
+    loss_per_token = F.cross_entropy(
+        shift_logits.view(-1, model.vocab_size),
+        shift_labels.view(-1),
+        reduction='none',
+        ignore_index=-100
+    ).view_as(shift_labels)
+    
+    log_seq_probs = -(loss_per_token.sum(dim=1) / (shift_labels != -100).sum(dim=1)).unsqueeze(-1)  # (bsz, 1)
+
+    diff = log_seq_probs.unsqueeze(0) - log_seq_probs.unsqueeze(-1)
+
+    rw_diff = scores.unsqueeze(0) - scores.unsqueeze(-1)
+
+    positive_mask = (rw_diff > 0).float()
+
+    log_sigma_diff = F.logsigmoid(diff)
+
+    lambda_simpo_loss = torch.multiply(log_sigma_diff * positive_mask, lambda_weight)
+
+    lambda_simpo_loss = -lambda_simpo_loss.sum(dim=-1)
+
+    loss = lambda_simpo_loss.mean() * 0.01 + outputs.loss
+
+    return (loss, outputs) if return_outputs else loss
+
+
 
 def create_custom_scheduler(
     training_args: "TrainingArguments",

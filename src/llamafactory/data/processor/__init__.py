@@ -25,6 +25,7 @@ from .nluheadwised import NluHeadDatasetProcessor
 from .dragentvised import DrAgentDatasetProcessor
 from .unsupervised import UnsupervisedDatasetProcessor
 from .relevance_dense_retrieval import RelevanceDenseRetrievalDatasetProcessor
+from .lambda_simpo import LambdaSimpoDatasetProcessor
 
 
 __all__ = [
@@ -41,5 +42,6 @@ __all__ = [
     "PNLDenseRetrievalDatasetProcessor",
     "CustidDRDatasetProcessor",
     "PNLDenseRetrievalTAPDatasetProcessor",
-    "RelevanceDenseRetrievalDatasetProcessor"
+    "RelevanceDenseRetrievalDatasetProcessor",
+    "LambdaSimpoDatasetProcessor"
 ]

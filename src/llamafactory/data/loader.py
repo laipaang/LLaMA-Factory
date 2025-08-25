@@ -37,7 +37,8 @@ from .processor import (
     PNLDenseRetrievalDatasetProcessor,
     CustidDRDatasetProcessor,
     PNLDenseRetrievalTAPDatasetProcessor,
-    RelevanceDenseRetrievalDatasetProcessor
+    RelevanceDenseRetrievalDatasetProcessor,
+    LambdaSimpoDatasetProcessor
 )
 
 
@@ -242,6 +243,8 @@ def _get_dataset_processor(
                 dataset_processor_class = PNLDenseRetrievalTAPDatasetProcessor
             elif data_args.relevance_dense_retrieval:
                 dataset_processor_class = RelevanceDenseRetrievalDatasetProcessor
+            elif data_args.lambda_simpo:
+                dataset_processor_class = LambdaSimpoDatasetProcessor
             else:
                 dataset_processor_class = SupervisedDatasetProcessor
 

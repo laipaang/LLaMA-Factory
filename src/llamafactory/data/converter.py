@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 from ..extras import logging
 from .data_utils import Role
 from .data_converter.nlu_converter import NluHeadDatasetConverter
+from .data_converter.lambda_simpo_converter import LambdaSimpoDatasetConverter
 from .data_converter.notemplate_converter import NoTemplateDatasetConverter
 
 
@@ -220,6 +221,7 @@ DATASET_CONVERTERS = {
     "alpaca": AlpacaDatasetConverter,
     "sharegpt": SharegptDatasetConverter,
     "target_nlu": NluHeadDatasetConverter,
+    "lambda_simpo": LambdaSimpoDatasetConverter,
     "dynamic": NoTemplateDatasetConverter,
 }
 
