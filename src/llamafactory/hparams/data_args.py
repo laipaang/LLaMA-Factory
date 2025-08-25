@@ -115,6 +115,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not has judge score loss in targeting."},
     )
+    lambda_simpo: bool = field(
+        default=False,
+        metadata={"help": "Whether or not has rlhf loss in targeting."},
+    )
     dynamic: bool = field(
         default=False,
         metadata={"help": "Whether or not apply template."},

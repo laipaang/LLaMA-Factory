@@ -18,6 +18,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
+import os
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -305,4 +306,99 @@ class KTODataCollatorWithPadding(MultiModalDataCollatorForSeq2Seq):
             batch["kl_token_type_ids"] = kl_batch["token_type_ids"]
 
         batch["kto_tags"] = torch.tensor(kto_tags)
+        return batch
+
+
+@dataclass
+class RlhfDataCollatorWith4DAttentionMask(MultiModalDataCollatorForSeq2Seq):
+    r"""Data collator for 4d attention mask, 支持一个原始样本拆分为多个子样本的批次处理."""
+
+    """
+    样本形如, 需要切开字段拼接成真实数据
+    {
+        'input_ids': [
+            [seq_1 token_id], [seq_2 token_id]
+        ], 
+        'attention_mask': [
+            [mask_1], [mask_2]
+        ], 
+        'labels': [
+            [label_1 token_id], [label_2 token_id]
+        ], 
+        'is_use_sft_loss': [seq_1 sft tag, seq_2 sft tag], 
+        'is_use_cls_loss': 类似, 
+        'is_use_tw_loss': 类似, 
+        'cls_soft_label': [
+            [qlq_score_1], [qlq_score_2]
+        ], 
+        'tw_soft_label': [
+            [tw_score_1], [tw_score_2]
+        ], 
+        'scores': [click_1, click_2], 
+        'rank': [rank_1, rank_2]
+    }
+    """
+    def __init__(
+        self, 
+        block_diag_attn: bool = False,
+        attn_implementation: Literal["eager", "sdpa", "flash_attention_2"] = "eager",
+        compute_dtype: "torch.dtype" = torch.float32,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.block_diag_attn = block_diag_attn
+        self.attn_implementation = attn_implementation
+        self.compute_dtype = compute_dtype
+
+        # 获取分布式训练环境中的 local_rank
+        self.local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, "torch.Tensor"]:
+        # 1. 展开每个原始样本的所有子样本
+        expanded_features = []
+        for feature in features:
+            num_subsamples = len(feature["input_ids"])
+            for i in range(num_subsamples):
+                subsample = {}
+                for key, value in feature.items():
+                    if isinstance(value, list) and len(value) == num_subsamples:
+                        subsample[key] = value[i]   # 列表字段, 取第i个子样本的值
+                    else:
+                        subsample[key] = value      # 非列表字段直接继承（如全局参数）
+                expanded_features.append(subsample)
+
+        # 2. 调用父类方法处理展开后的子样本列表
+        batch = super().__call__(expanded_features)
+
+        # 3. 处理 4D 注意力掩码（原逻辑保留）
+        if self.block_diag_attn and self.attn_implementation != "flash_attention_2":
+            batch["attention_mask"] = prepare_4d_attention_mask(batch["attention_mask"], self.compute_dtype)
+
+        # 4. 强制数据类型转换（原逻辑保留）
+        for key, value in batch.items():
+            if torch.is_tensor(value) and torch.is_floating_point(value):
+                batch[key] = value.to(self.compute_dtype)
+    
+        # [debug]. 原始样本
+        # if self.local_rank == 0:
+        #     print("len features: ", len(features))
+        #     print("\n===== 原始特征（一个原始样本）=====")
+        #     print("原始样本字段:", features[0].keys())
+        #     print("input_ids 子样本数:", len(features[0]["input_ids"]))
+        #     print("子样本1开始:", features[0]["input_ids"][0][:10])  # 打印前10个token
+        #     print("子样本1结束:", features[0]["input_ids"][0][-5:])  # 打印后5个token
+        #     print("子样本2开始:", features[0]["input_ids"][1][:10])  # 打印前10个token
+        #     print("子样本2结束:", features[0]["input_ids"][1][-5:])  # 打印后5个token
+
+        #     print("\n===== 展开后的子样本（一个训练批次）=====")
+        #     print("子样本数量:", len(expanded_features))
+        #     print("第一个子样本 input_ids:", expanded_features[0]["input_ids"][:10])
+        #     print("第一个子样本 labels:", expanded_features[0]["labels"][:5])
+
+        #     print("\n===== 训练批次张量形状 =====")
+        #     print("input_ids shape:", batch["input_ids"].shape)
+        #     print("labels shape:", batch["labels"].shape)
+        #     if "attention_mask" in batch:
+        #         print("attention_mask shape:", batch["attention_mask"].shape)
+
         return batch

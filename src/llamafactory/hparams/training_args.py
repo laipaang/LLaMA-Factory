@@ -81,6 +81,11 @@ class TrainingArguments(RayArguments, Seq2SeqTrainingArguments):
         metadata={"help": "whether or not to train with nlu head in target."},
     )
 
+    use_lambda_simpo: bool = field(
+        default=False,
+        metadata={"help": "whether or not to train with simpo loss in target."},
+    )
+
     def __post_init__(self):
         Seq2SeqTrainingArguments.__post_init__(self)
         RayArguments.__post_init__(self)

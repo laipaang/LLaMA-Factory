@@ -18,7 +18,7 @@
 import os
 from typing import TYPE_CHECKING, Optional
 
-from ...data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
+from ...data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer, RlhfDataCollatorWith4DAttentionMask
 from ...extras.constants import IGNORE_INDEX
 from ...extras.logging import get_logger
 from ...extras.misc import calculate_tps
@@ -55,7 +55,12 @@ def run_sft(
     if getattr(model, "is_quantized", False) and not training_args.do_train:
         setattr(model, "_hf_peft_config_loaded", True)  # hack here: make model compatible with prediction
 
-    data_collator = SFTDataCollatorWith4DAttentionMask(
+    if data_args.lambda_simpo:
+        collator_fn = RlhfDataCollatorWith4DAttentionMask
+    else:
+        collator_fn = SFTDataCollatorWith4DAttentionMask
+
+    data_collator = collator_fn(
         template=template,
         model=model if not training_args.predict_with_generate else None,
         pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
