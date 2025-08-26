@@ -173,30 +173,27 @@ class Qwen2ForCausalLMPNLDenseRetrieval(Qwen2PreTrainedModel, GenerationMixin):
         """
         分布式环境下的In-Batch Negatives计算
         """
-        # 收集所有GPU上的embedding
-        all_query = self._dist_gather_tensor(query_embedding)
-        all_ad = self._dist_gather_tensor(ad_embedding)
-        all_is_dr = self._dist_gather_tensor(is_dr)
-
         # mrl shrink
-        all_query = shrink(all_query, dim)
-        all_ad = shrink(all_ad, dim)
+        query_embedding = shrink(query_embedding, dim)
+        ad_embedding = shrink(ad_embedding, dim)
 
-        dr_matmul = all_query @ all_ad.T
-        
-        batch_size = all_query.size(0)
-        dr_labels = torch.arange(all_query.size(0), device=dr_matmul.device, dtype=torch.long)
-        
-        # 添加margin和temperature
-        margin = torch.full(size=(batch_size,), fill_value=dr_margin, device=dr_matmul.device)
-        margin = torch.diag(margin)
-        dr_preds = dr_matmul - margin
-        dr_preds = dr_preds / dr_temperature
-        
-        # 计算损失
-        dr_celoss = F.cross_entropy(dr_preds, dr_labels, reduction='none')
-        dr_celoss = (dr_celoss * all_is_dr).mean() * dr_weight
-        return dr_celoss
+        from acclgr.ops import GlobalNegativeSampling
+
+        B, device = query_embedding.size(0), query_embedding.device
+        labels = torch.arange(B, device=device)
+        idx_2d = [torch.arange(B, device=device), labels]
+        labels[is_dr == 0] = -100 # ignore
+
+        global_ad_embedding, mask, labels = GlobalNegativeSampling.apply(ad_embedding, labels)
+        logits = query_embedding @ global_ad_embedding.T
+
+        logits[idx_2d] -= dr_margin
+        logits /= dr_temperature
+        logits = logits.masked_fill(mask, float('-inf'))
+
+        loss = F.cross_entropy(logits, labels, ignore_index=-100)
+
+        return loss * dr_weight
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
