@@ -138,6 +138,7 @@ class DataArguments:
     use_dense_retrieval_tap: bool = field(
         default=False,
         metadata={"help": "Whether or not use dense_retrieval_tap loss in targeting."},
+    )
     relevance_dense_retrieval: bool = field(
         default=False,
         metadata={"help": "Whether or not use relevance dense_retrieval loss in targeting."},

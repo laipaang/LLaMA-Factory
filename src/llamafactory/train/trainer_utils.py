@@ -621,11 +621,12 @@ def compute_rlhf_loss(model, inputs, return_outputs=False):
 
     log_sigma_diff = F.logsigmoid(diff)
 
-    lambda_simpo_loss = torch.multiply(log_sigma_diff * positive_mask, lambda_weight)
+    # lambda_simpo_loss = torch.multiply(log_sigma_diff * positive_mask, lambda_weight)
+    lambda_simpo_loss = log_sigma_diff * positive_mask
 
     lambda_simpo_loss = -lambda_simpo_loss.sum(dim=-1)
 
-    loss = lambda_simpo_loss.mean() * 0.01 + outputs.loss
+    loss = lambda_simpo_loss.mean() * 0.001 + outputs.loss
 
     return (loss, outputs) if return_outputs else loss
 
