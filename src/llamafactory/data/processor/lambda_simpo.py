@@ -86,7 +86,7 @@ class LambdaSimpoDatasetProcessor(DatasetProcessor):
             tw_soft_label_batch.append(tw_soft_label_list[pair_idx])
             scores_batch.append(scores_list[pair_idx])
             rank_batch.append(rank_list[pair_idx])
-            sample_length.append(len(input_ids))
+            sample_length.append(len(input_ids)-1)
 
         # 添加到输出
         model_inputs["input_ids"].append(input_ids_batch)
