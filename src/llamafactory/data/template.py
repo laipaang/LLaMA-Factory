@@ -246,7 +246,7 @@ class Template:
         if prefix:
             jinja_template += "{{ " + prefix + " }}"
 
-        if data_args.template == "dynamic":
+        if data_args.template == "dynamic" or data_args.template == "qwen_targeting":
             jinja_template += "{% set content = messages[0]['content'] %}"
             jinja_template += "{{ " + user + " }}"
         else:
@@ -1585,6 +1585,18 @@ register_template(
     format_prefix=EmptyFormatter(slots=[""]),
     format_system=EmptyFormatter(slots=[""]),
     format_user=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|><|im_start|>\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>"]),
+    stop_words=["<|im_end|>"],
+    replace_jinja_template=True,
+    replace_eos=True,
+)
+
+# copied from chatml template
+register_template(
+    name="qwen_targeting",
+    format_prefix=EmptyFormatter(slots=[""]),
+    format_system=EmptyFormatter(slots=[""]),
+    format_user=StringFormatter(slots=["<|im_start|>{{content}}<|im_end|><|im_start|>"]),
     format_assistant=StringFormatter(slots=["{{content}}<|im_end|>"]),
     stop_words=["<|im_end|>"],
     replace_jinja_template=True,
