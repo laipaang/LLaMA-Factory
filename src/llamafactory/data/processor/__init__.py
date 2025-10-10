@@ -26,7 +26,7 @@ from .dragentvised import DrAgentDatasetProcessor
 from .unsupervised import UnsupervisedDatasetProcessor
 from .relevance_dense_retrieval import RelevanceDenseRetrievalDatasetProcessor
 from .lambda_simpo import LambdaSimpoDatasetProcessor
-
+from .trade_dr_processor import TradeDataProcessor
 
 __all__ = [
     "DatasetProcessor",
@@ -43,5 +43,6 @@ __all__ = [
     "CustidDRDatasetProcessor",
     "PNLDenseRetrievalTAPDatasetProcessor",
     "RelevanceDenseRetrievalDatasetProcessor",
-    "LambdaSimpoDatasetProcessor"
+    "LambdaSimpoDatasetProcessor",
+    "TradeDataProcessor"
 ]
