@@ -119,6 +119,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not has rlhf loss in targeting."},
     )
+    data_trade_dr: bool = field(
+        default=False,
+        metadata={"help": "Whether or not has trade dr."},
+    )
     dynamic: bool = field(
         default=False,
         metadata={"help": "Whether or not apply template."},
